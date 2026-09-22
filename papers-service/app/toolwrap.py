@@ -31,7 +31,7 @@ _spec.loader.exec_module(tool_mod)
 _m = re.search(r"version:\s*([0-9.]+)", tool_mod.__doc__ or "")
 TOOL_VERSION = _m.group(1) if _m else "unknown"
 
-UA = {"User-Agent": "papers-service/1.0 (+https://github.com/xyonium/firecrawl)"}
+UA = {"User-Agent": "papers-service/1.0 (+https://github.com/xyonium/compose)"}
 
 # tool.py paper_id 的已知前缀 → 剥掉还原裸 id（doi/URL key 等无前缀的不受影响）
 _STRIP_PREFIXES = {

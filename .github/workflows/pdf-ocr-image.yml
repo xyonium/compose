@@ -1,13 +1,13 @@
 name: Build pdf-ocr image
 
-# pdf-ocr 源码随 portainer-stack 分支走（部署单分支），所以镜像构建
+# pdf-ocr 源码随 firecrawl 分支走（部署单分支），所以镜像构建
 # 工作流也放这个分支（push 触发要求工作流文件存在于被推送的分支上）。
 # 构建后把新 digest 钉回两个 compose 文件——compose diff 驱动 Portainer 更新，
 # 与上游同步机器人同一思路。paths 过滤不含 compose 文件，钉版提交不会自激。
 
 on:
   push:
-    branches: [portainer-stack]
+    branches: [firecrawl]
     paths:
       - "pdf-ocr/**"
       - ".github/workflows/pdf-ocr-image.yml"
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: portainer-stack
+          ref: firecrawl
 
       - uses: docker/login-action@v3
         with:
@@ -45,7 +45,7 @@ jobs:
             ghcr.io/xyonium/firecrawl-pdf-ocr:latest
             ghcr.io/xyonium/firecrawl-pdf-ocr:sha-${{ github.sha }}
           labels: |
-            org.opencontainers.image.source=https://github.com/xyonium/firecrawl
+            org.opencontainers.image.source=https://github.com/xyonium/compose
             org.opencontainers.image.description=firecrawl pdf OCR adapter (RunPod MU contract -> self-hosted MinerU)
             org.opencontainers.image.licenses=MIT
           cache-from: type=gha
@@ -72,5 +72,5 @@ jobs:
             echo "digest unchanged"
           else
             git commit -m "ci: pin pdf-ocr digest ($(date -u +%F) ${GITHUB_SHA:0:7})"
-            git push origin portainer-stack
+            git push origin firecrawl
           fi

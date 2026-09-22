@@ -1,6 +1,6 @@
 name: Build papers-service image
 
-# papers-service 源码随 portainer-stack 分支走（部署单分支），所以镜像构建
+# papers-service 源码随 firecrawl 分支走（部署单分支），所以镜像构建
 # 工作流也放这个分支（push 触发要求工作流文件存在于被推送的分支上）。
 # 构建后把新 digest 钉回两个 compose 文件——compose diff 驱动 Portainer 更新，
 # 与上游同步机器人同一思路。paths 过滤不含 compose 文件，钉版提交不会自激。
@@ -11,7 +11,7 @@ name: Build papers-service image
 
 on:
   push:
-    branches: [portainer-stack]
+    branches: [firecrawl]
     paths:
       - "papers-service/**"
       - ".github/workflows/papers-service-image.yml"
@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: portainer-stack
+          ref: firecrawl
 
       - name: Resolve paper-search ref
         id: psref
@@ -59,7 +59,7 @@ jobs:
             ghcr.io/xyonium/firecrawl-papers-service:latest
             ghcr.io/xyonium/firecrawl-papers-service:sha-${{ github.sha }}
           labels: |
-            org.opencontainers.image.source=https://github.com/xyonium/firecrawl
+            org.opencontainers.image.source=https://github.com/xyonium/compose
             org.opencontainers.image.description=paper-search-mcp replacement: /papers/* upstream for research-proxy (search via paper-search tool.py direct adapters)
             org.opencontainers.image.licenses=MIT
           cache-from: type=gha
@@ -87,6 +87,6 @@ jobs:
           else
             git commit -m "ci: pin papers-service digest ($(date -u +%F) ${GITHUB_SHA:0:7})"
             # 与 research-proxy-image 并发时可能撞 push：先 rebase 再推
-            git pull --rebase origin portainer-stack
-            git push origin portainer-stack
+            git pull --rebase origin firecrawl
+            git push origin firecrawl
           fi

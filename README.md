@@ -1,6 +1,6 @@
-# portainer-stack
+# firecrawl
 
-这个分支是 Portainer 部署 firecrawl 的专用分支，与 main 完全独立（orphan branch），只包含部署所需文件：
+这个分支是 Portainer 部署 firecrawl 的专用分支，与 main 完全独立（orphan branch），只包含部署所需文件。现居 [xyonium/compose](https://github.com/xyonium/compose) 仓库——2026-09 从 xyonium/firecrawl 的 `portainer-stack` 分支整体迁入，**git 历史完整保留，digest 回滚链未断**，compose 文件内容与迁移前逐字节一致（迁移只改了 workflow/README 里的仓库与分支引用）：
 
 | 文件 | 用途 | 谁来改 |
 |---|---|---|
@@ -73,26 +73,29 @@
 
 ## Portainer 配置
 
-Compose path 保持默认的 `docker-compose.yaml` 不变，**只需把分支指过来**：
+仓库地址 `https://github.com/xyonium/compose.git`，分支 `refs/heads/firecrawl`，Compose path 保持默认的 `docker-compose.yaml` 不变。
 
-- 方式一（API，不重建 stack）：在 Portainer 界面生成 access token（右上角头像 → My account → Access tokens），然后：
-  ```bash
-  curl -X POST "https://<portainer地址>/api/stacks/<stack-id>/git?endpointId=1" \
-    -H "X-API-Key: <token>" -H "Content-Type: application/json" \
-    -d '{"RepositoryReferenceName": "refs/heads/portainer-stack"}'
-  ```
-  回到 stack 页面点 **Pull and redeploy**。（stack-id 在 stack 页面的 URL 里）
-- 方式二（重建 stack）：删掉旧 stack 后重新创建，创建表单里分支填 `refs/heads/portainer-stack`。
-  先把 env 变量复制出来再删；compose 里 `name: firecrawl` 已固定项目名，数据卷（firecrawl_redis 等）会自动挂回，**数据不丢**；若用了 webhook 自动更新，新 stack 的 webhook URL 会变，记得换。
-- 方式三（升级到 Portainer 2.45+）：stack 页面出现 **Edit git settings**，可直接改分支，不用重建。
+从旧仓库（xyonium/firecrawl 的 portainer-stack 分支）切换过来：
 
-切换时合并配置与切换前完全一致（已逐字节验证），对容器是无扰动重建。
-建议开启 **Automatic updates**（polling 或 webhook），机器人推送后 stack 自动更新。
+- 方式一（Portainer 2.45+，不重建 stack）：stack 页面 **Edit git settings**，Repository URL 改为
+  `https://github.com/xyonium/compose.git`、分支改为 `refs/heads/firecrawl`，保存后 **Pull and redeploy**。
+- 方式二（重建 stack）：先把 env 变量复制出来，删掉旧 stack 后重新创建，创建表单里仓库填
+  `https://github.com/xyonium/compose.git`、分支填 `refs/heads/firecrawl`。
+  compose 里 `name: firecrawl` 已固定项目名，数据卷（firecrawl_redis 等）会自动挂回，**数据不丢**；若用了 webhook 自动更新，新 stack 的 webhook URL 会变，记得换。
+
+切换时合并配置与旧分支当前内容逐字节一致（迁移未动任何 compose 文件），对容器是无扰动重建。
+切换完成后记得启用同步（见下节），并开启 **Automatic updates**（polling 或 webhook），机器人推送后 stack 自动更新。
 
 ## 同步机制
 
-`main` 分支上的 `.github/workflows/portainer-stack-sync.yml` **每月 5 日 03:42 UTC**（北京时间 11:42）运行
-（GitHub 定时任务只跑默认分支，所以工作流放在 main；想临时同步可在 Actions 页面手动 Run workflow）：
+同步工作流在 compose 仓库 `main` 分支的 `.github/workflows/sync-firecrawl.yml`
+（GitHub 定时任务只跑默认分支，所以工作流放 main，操作后推回本分支）。
+**⚠️ 定时调度当前刻意注释未启用**——等 Portainer stack 切换到本仓库后，到 main 分支把该文件里
+`schedule:` 两行的注释去掉即开启（每月 5 日 03:42 UTC / 北京 11:42）；`workflow_dispatch`
+手动同步随时可用，在 Actions 页面选 **Sync firecrawl compose** → Run workflow。
+旧 fork（xyonium/firecrawl）main 上的 `portainer-stack-sync.yml` 与本仓库无关，fork 删除后自然失效，无需处理。
+
+同步逻辑：
 
 1. 拉取上游最新 compose → `docker-compose.upstream.yaml`
 2. 与本分支的 override 合并（`docker compose config --no-interpolate`）
