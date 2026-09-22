@@ -29,7 +29,10 @@
    ghcr 镜像包名不变（package 属用户命名空间，与旧 fork 解耦）。
    **对旧 fork 零依赖**：上游同步源是官方 firecrawl/firecrawl；
    paper-search 构建依赖的是独立仓库 xyonium/paper-search。
-6. **sub2api 分支**：上游 Wei-Shaw/sub2api 的 deploy/docker-compose.yml。自定义：
+6. **sub2api 分支**：上游 Wei-Shaw/sub2api 的 deploy/docker-compose.yml，另同步
+   deploy/.env.example 作分支内变量参考（README 凭据表与 deploy/docker-deploy.sh 的
+   "Generated secure credentials" 口径一致：POSTGRES_PASSWORD/JWT_SECRET/TOTP_ENCRYPTION_KEY
+   三项 `openssl rand -hex 32` 生成，Portainer 无交互引导须自行生成填入 stack env）。自定义：
    - 镜像走 `jcr.savorcare.com/docker/` mirror（weishaw/sub2api、postgres:18-alpine、redis:8-alpine）
    - sub2api 摘宿主端口（`ports: !reset null`），接 `reverse-proxy` 外部网络走 traefik
      （sub2api.savorcare.com，myresolver 泛域名证书，容器端口显式钉 8080）
