@@ -1,0 +1,98 @@
+name: Sync firecrawl compose
+
+# 让 `firecrawl` orphan 分支与上游 firecrawl/firecrawl 保持同步：
+#   1. docker-compose.upstream.yaml  <- 上游原样拷贝（bot 维护）
+#   2. docker-compose.yaml           <- 与 docker-compose.portainer.yaml 的预合并产物，
+#                                       firecrawl 系镜像钉 digest（bot 生成，Portainer 直接部署它）
+# 全部自定义只放 docker-compose.portainer.yaml——另两个文件永远不要手改。
+# 定时任务只跑默认分支，所以本文件放 main，checkout/推送的目标是 firecrawl 分支。
+
+on:
+  # ⚠️ 定时刻意未启用：等 Portainer stack 从旧仓库（xyonium/firecrawl 的
+  # portainer-stack 分支）切换到本仓库后，取消下面两行注释即开启定时同步。
+  # schedule:
+  #   - cron: "42 3 5 * *" # 每月 5 日 03:42 UTC（北京 11:42）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: firecrawl-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out firecrawl branch
+        uses: actions/checkout@v4
+        with:
+          ref: firecrawl
+
+      - name: Fetch latest upstream compose
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/firecrawl/firecrawl/main/docker-compose.yaml \
+            -o docker-compose.upstream.yaml
+
+      - name: Merge, pin image digests and validate
+        run: |
+          set -euo pipefail
+          # --no-interpolate 保留 ${VAR} 模板，由 Portainer stack env 注入
+          docker compose -f docker-compose.upstream.yaml -f docker-compose.portainer.yaml \
+            config --no-interpolate --quiet
+          docker compose -f docker-compose.upstream.yaml -f docker-compose.portainer.yaml \
+            config --no-interpolate > docker-compose.merged.tmp.yaml
+
+          # 把浮动的 firecrawl 系镜像钉到上游当前 digest。
+          # CE 版 Portainer 没有 re-pull image，镜像更新必须走 compose diff：
+          # 新 digest -> 文件变化 -> redeploy 拉新镜像。
+          # $1 = 栈里用的 mirror 镜像，$2 = 解析用的上游 ref。
+          #（mirror digest 拉取已在宿主机验证：cache miss 时 mirror 回源拉取。
+          #  此处不探测——GitHub runner 到不了 mirror。）
+          # 正则锚定行尾：镜像名互为前缀（…/firecrawl vs …/firecrawl-mcp-server），
+          # 不锚定短前缀会误伤长名字的镜像行。
+          pin() {
+            local digest
+            digest=$(docker buildx imagetools inspect "$2" --format '{{.Manifest.Digest}}')
+            sed -i -E "s#${1}(:[[:alnum:]_.-]+)?(@sha256:[[:xdigit:]]{64})?[[:space:]]*\$#${1}@${digest}#" \
+              docker-compose.merged.tmp.yaml
+            grep -q "${1}@${digest}" docker-compose.merged.tmp.yaml
+          }
+          pin "jcr.savorcare.com/ghcr/firecrawl/firecrawl"            "ghcr.io/firecrawl/firecrawl:latest"
+          pin "jcr.savorcare.com/ghcr/firecrawl/playwright-service"   "ghcr.io/firecrawl/playwright-service:latest"
+          pin "jcr.savorcare.com/ghcr/firecrawl/nuq-postgres"         "ghcr.io/firecrawl/nuq-postgres:latest"
+          pin "jcr.savorcare.com/ghcr/firecrawl/firecrawl-mcp-server" "ghcr.io/firecrawl/firecrawl-mcp-server:latest"
+
+          # 哨兵检查：上游若改了我们 override 依赖的东西（比如重命名 service），
+          # 大声失败而不是把坏配置部署上去。（只用短 token——生成文件会折叠长行）
+          for needle in \
+            "container_name: firecrawl" \
+            "container_name: firecrawl-mcp" \
+            "container_name: firecrawl-research-proxy" \
+            "RESEARCH_PROXY_URL" \
+            "jcr.savorcare.com" \
+            "reverse-proxy" \
+            "traefik.enable" \
+            "harness.js" \
+            "llmExtract.js"; do
+            grep -q "$needle" docker-compose.merged.tmp.yaml || {
+              echo "::error::merged config missing '$needle' — upstream changed something our override relies on"
+              exit 1
+            }
+          done
+          mv docker-compose.merged.tmp.yaml docker-compose.yaml
+          # 最终文件必须能独立解析
+          docker compose -f docker-compose.yaml config --quiet
+          echo "merged file OK"
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docker-compose.upstream.yaml docker-compose.yaml
+          if git diff --cached --quiet; then
+            echo "Upstream unchanged, nothing to do."
+          else
+            git commit -m "sync: upstream compose + image digests ($(date -u +%F))"
+            git push origin firecrawl
+          fi
