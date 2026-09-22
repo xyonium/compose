@@ -9,6 +9,10 @@
 | `docker-compose.portainer.yaml` | 我们的全部自定义（镜像 mirror、traefik、reverse-proxy 网络、项目名固定） | **要调整部署只改这个文件** |
 | `.env.example` | 上游 [deploy/.env.example](https://github.com/Wei-Shaw/sub2api/blob/main/deploy/.env.example) 的原样拷贝，全部变量的权威参考——查变量看它，不用翻上游 | **只由机器人改**（随同步更新） |
 
+上游另有 `docker-compose.local.yml`（绑定挂载 `./data` 等宿主目录的变体，配 `docker-deploy.sh`
+交互式部署用，脚本里的 `mkdir -p data postgres_data redis_data` 就是为那个文件建的目录），
+**本分支不跟踪它**——命名卷版才是 Portainer 场景的对应文件。
+
 ## 自定义内容（相对上游）
 
 - 三个镜像全部走私服 mirror：`jcr.savorcare.com/docker/{weishaw/sub2api,postgres:18-alpine,redis:8-alpine}`
