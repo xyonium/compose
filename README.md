@@ -7,6 +7,7 @@
 | `docker-compose.yaml` | **预合并生成文件**：上游 compose + Portainer override 合并后的最终结果，且 sub2api 主镜像已按 digest 钉版，Portainer 直接部署它（`${VAR}` 变量保留，仍由 Portainer 的 stack env 注入） | **只由机器人生成**，手改会被覆盖 |
 | `docker-compose.upstream.yaml` | 上游 [deploy/docker-compose.yml](https://github.com/Wei-Shaw/sub2api/blob/main/deploy/docker-compose.yml) 的原样拷贝 | **只由机器人改** |
 | `docker-compose.portainer.yaml` | 我们的全部自定义（镜像 mirror、traefik、reverse-proxy 网络、项目名固定） | **要调整部署只改这个文件** |
+| `.env.example` | 上游 [deploy/.env.example](https://github.com/Wei-Shaw/sub2api/blob/main/deploy/.env.example) 的原样拷贝，全部变量的权威参考——查变量看它，不用翻上游 | **只由机器人改**（随同步更新） |
 
 ## 自定义内容（相对上游）
 
@@ -24,16 +25,21 @@ Compose path 保持默认的 `docker-compose.yaml`。
 
 ### stack env 必填项
 
+上游的 [docker-deploy.sh](https://github.com/Wei-Shaw/sub2api/blob/main/deploy/docker-deploy.sh)
+有一步交互式引导：用 `openssl rand -hex 32` 自动生成三个安全凭据并在结尾展示
+（"Generated secure credentials"）。**Portainer 部署没有这一步——这三个值必须自己生成好填进
+stack env**，生成方式与上游一致：`openssl rand -hex 32`。
+
 | 变量 | 说明 |
 |---|---|
-| `POSTGRES_PASSWORD` | **必填**，不设 compose 直接拒绝启动（上游 `:?` 断言） |
-| `JWT_SECRET` | 强烈建议固定（`openssl rand -hex 32`），否则重启后登录态全失效 |
-| `TOTP_ENCRYPTION_KEY` | 用了 2FA 就**必须**固定（`openssl rand -hex 32`），否则重启后所有 TOTP 失效 |
-| `ADMIN_PASSWORD` | 首次启动自动建管理员（`ADMIN_EMAIL` 默认 admin@sub2api.local） |
+| `POSTGRES_PASSWORD` | **必填**，不设 compose 直接拒绝启动（上游 `:?` 断言）；deploy 脚本自动生成项 |
+| `JWT_SECRET` | 强烈建议固定，否则重启后登录态全失效；deploy 脚本自动生成项 |
+| `TOTP_ENCRYPTION_KEY` | 用了 2FA 就**必须**固定，否则重启后所有 TOTP 失效；deploy 脚本自动生成项 |
+| `ADMIN_PASSWORD` | 首次启动自动建管理员（`ADMIN_EMAIL` 默认 admin@sub2api.local）；脚本不生成，自己设 |
 | `REDIS_PASSWORD` | 可选；设上后 redis 开 requirepass，应用侧自动带上 |
 
 其余几十项 `GATEWAY_*` / `SECURITY_*` / OAuth 变量全部有默认值，一般不用动；
-要调时参考上游 [deploy/.env.example](https://github.com/Wei-Shaw/sub2api/blob/main/deploy/.env.example)，
+要调时查本分支的 `.env.example`（上游原样拷贝，bot 随同步更新），
 **加在 Portainer stack env 里，不要改 compose 文件**。
 
 部署后建议开启 **Automatic updates**（polling 或 webhook），机器人推送后 stack 自动更新。
