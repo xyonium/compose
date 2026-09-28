@@ -239,8 +239,9 @@ services:
 
           // 11. Fill the empty .describe() slots on research tool params
           //     (upstream shipped them blank; the tool descriptions carry most
-          //     of the semantics, so keep these to what a caller can't infer
-          //     from the name). Anchors are the unique zod param blocks.
+          //     of the semantics, so keep these to what a caller cannot infer
+          //     from the name — no apostrophes here, see patch 9 note).
+          //     Anchors are the unique zod param blocks.
           {
             const before = c;
             c = c.replace(
