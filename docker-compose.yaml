@@ -454,7 +454,7 @@ services:
       PAPERS_BASE_URL: ${PAPERS_BASE_URL:-http://papers-service:3200}
       REACH_BASE_URL: ${REACH_BASE_URL:-http://mcpo:8000}
       SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
-    image: jcr.savorcare.com/ghcr/xyonium/firecrawl-research-proxy@sha256:595283bb0b3aca36e3b5a3119c313ccaaefe60982beed3751d5f612f061424e1
+    image: jcr.savorcare.com/ghcr/xyonium/firecrawl-research-proxy@sha256:a8537d0c2b8ebc3d01d0e98bd4aa6c372d48ac8c0977ea2a770964a9c8ad5d3e
     networks:
       backend: null
       reverse-proxy: null
