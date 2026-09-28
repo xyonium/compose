@@ -142,8 +142,14 @@ services:
           //    operators sentence. Upstream removed the old "**Sources:**" anchor
           //    (v3.24-ish), so anchor on "the set is non-exhaustive." instead;
           //    idempotency guard checks the inserted marker itself.
+          //    Escape via JSON.stringify minus the wrapping quotes: since the
+          //    2026-09-28 image the first anchor occurrence sits inside a
+          //    double-quoted .describe("...") in the bundle, so a raw " would
+          //    terminate the string and break the whole file (crash loop).
+          //    \" is harmless in template-literal / single-quoted contexts too.
           if (!c.includes("**SearXNG !bang:**") && c.includes("the set is non-exhaustive.")) {
-            c = c.replace("the set is non-exhaustive.", "the set is non-exhaustive. " + bang);
+            const bangEsc = JSON.stringify(bang).slice(1, -1);
+            c = c.replace("the set is non-exhaustive.", "the set is non-exhaustive. " + bangEsc);
             modified = true; logs.push("!bang");
           }
 
@@ -396,8 +402,8 @@ services:
     command: rabbitmq-server
     healthcheck:
       interval: 5s
-      retries: 3
-      start_period: 5s
+      retries: 12
+      start_period: 30s
       test:
         - CMD
         - rabbitmq-diagnostics

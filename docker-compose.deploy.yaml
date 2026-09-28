@@ -1,5 +1,7 @@
-# 部署自定义层（deploy 分支）：与上游 docker-compose.yaml 合并使用
-# docker compose -f docker-compose.yaml -f docker-compose.deploy.yaml up -d
+# 部署自定义层（deploy 分支）：唯一手改文件。deploy-sync bot 把它与
+# docker-compose.upstream.yaml 合并、钉 digest 后生成 docker-compose.yaml，
+# 部署平台（Arcane）只消费生成品。请勿手动合并两文件部署——本文件里 api/mcp
+# 等上游镜像不带 digest，会覆盖掉生成品里的钉版。
 services:
   playwright-service:
     image: jcr.savorcare.com/ghcr/firecrawl/playwright-service:latest
@@ -63,6 +65,16 @@ services:
   rabbitmq:
     image: jcr.savorcare.com/docker/rabbitmq:3-management
     restart: unless-stopped
+    # 放宽上游健康检查窗口：全栈同时重建时 RabbitMQ 冷启动实测 ~27s，而上游默认
+    # start_period 5s + retries 3×5s ≈ 20s 就被判 unhealthy，compose 随即中止启动，
+    # api 永远停在 created（2026-09-28 命中）。start_period 只豁免早期失败，
+    # 不影响首次成功即转 healthy 的速度。
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'check_running']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     volumes:
       - /tmp/firecrawl/rabiitmq:/var/lib/rabbitmq
 
@@ -187,8 +199,14 @@ services:
           //    operators sentence. Upstream removed the old "**Sources:**" anchor
           //    (v3.24-ish), so anchor on "the set is non-exhaustive." instead;
           //    idempotency guard checks the inserted marker itself.
+          //    Escape via JSON.stringify minus the wrapping quotes: since the
+          //    2026-09-28 image the first anchor occurrence sits inside a
+          //    double-quoted .describe("...") in the bundle, so a raw " would
+          //    terminate the string and break the whole file (crash loop).
+          //    \" is harmless in template-literal / single-quoted contexts too.
           if (!c.includes("**SearXNG !bang:**") && c.includes("the set is non-exhaustive.")) {
-            c = c.replace("the set is non-exhaustive.", "the set is non-exhaustive. " + bang);
+            const bangEsc = JSON.stringify(bang).slice(1, -1);
+            c = c.replace("the set is non-exhaustive.", "the set is non-exhaustive. " + bangEsc);
             modified = true; logs.push("!bang");
           }
 
