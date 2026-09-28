@@ -140,7 +140,7 @@ services:
       # 指向 api-key-rotator → 官方云）；tavily/apify 走 rotator（在 owui 网络上）：
       FIRECRAWL_BASE_URL: ${FIRECRAWL_BASE_URL:-http://mcpo:8000/firecrawl}
       TAVILY_BASE_URL: ${TAVILY_BASE_URL:-http://api-key-rotator:8788/tavily}
-      APIFY_ROTATOR_BASE_URL: ${APIFY_ROTATOR_BASE_URL:-http://api-key-rotator:8788}
+      APIFY_ROTATOR_BASE_URL: ${APIFY_ROTATOR_BASE_URL:-http://api-key-rotator:8788/apify}
       MCPO_API_KEY: ${MCPO_API_KEY:-}
       # download_with_fallback 的 Unpaywall 请求标识（匿名有配额限制）
       UNPAYWALL_EMAIL: ${UNPAYWALL_EMAIL:-}
