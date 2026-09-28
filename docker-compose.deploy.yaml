@@ -281,6 +281,19 @@ services:
             modified = true; logs.push("parse-remote-note");
           }
 
+          // 10. Disable credit_usage tool (cloud-only): self-hosted api has no
+          //     Autumn billing backend (AUTUMN_SECRET_KEY missing -> 500). The
+          //     tool registration call site is unique; commenting it out drops
+          //     the tool plus its creditUsageOutputSchema cleanly. Upstream has
+          //     no env switch for this (checked all FIRECRAWL_* env reads).
+          if (c.includes("registerUsageTools(server, getClient);")) {
+            c = c.replace(
+              "registerUsageTools(server, getClient);",
+              "/* usage-tools-disabled: no Autumn billing backend in self-host */"
+            );
+            modified = true; logs.push("usage-tools-disable");
+          }
+
           if (modified) {
             fs.writeFileSync(f, c);
             n++;
