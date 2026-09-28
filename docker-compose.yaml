@@ -237,6 +237,23 @@ services:
             modified = true; logs.push("usage-tools-disable");
           }
 
+          // 11. Fill the empty .describe() slots on research tool params
+          //     (upstream shipped them blank; the tool descriptions carry most
+          //     of the semantics, so keep these to what a caller can't infer
+          //     from the name). Anchors are the unique zod param blocks.
+          {
+            const before = c;
+            c = c.replace(
+              "seed_ids: z6.array(z6.string()).min(1).max(10),\n      intent: z6.string().min(1),\n      mode: z6.enum([\"similar\", \"citers\", \"references\"]).optional(),\n      k: z6.number().int().min(1).max(500).optional(),",
+              "seed_ids: z6.array(z6.string()).min(1).max(10).describe(\"1-10 paper IDs; the first is the seed, the rest are anchors.\"),\n      intent: z6.string().min(1).describe(\"What the related papers should be about; used to rank candidates.\"),\n      mode: z6.enum([\"similar\", \"citers\", \"references\"]).optional().describe(\"similar (default): co-citation/bibliographic coupling; citers: papers citing the seed; references: papers the seed cites.\"),\n      k: z6.number().int().min(1).max(500).optional().describe(\"Number of ranked papers to return (default 10).\"),"
+            );
+            c = c.replace(
+              "question: z6.string().min(1),\n      k: z6.number().int().min(1).max(50).optional()",
+              "question: z6.string().min(1).describe(\"What to look for in the full text; passages are selected by relevance to it.\"),\n      k: z6.number().int().min(1).max(50).optional()"
+            );
+            if (c !== before) { modified = true; logs.push("research-param-desc"); }
+          }
+
           if (modified) {
             fs.writeFileSync(f, c);
             n++;
