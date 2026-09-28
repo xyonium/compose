@@ -16,6 +16,9 @@ services:
     container_name: firecrawl
     cpus: 4
     depends_on:
+      nuq-postgres:
+        condition: service_healthy
+        required: false
       playwright-service:
         condition: service_started
         required: true
@@ -75,7 +78,7 @@ services:
       - RUNPOD_MU_POD_ID=${RUNPOD_MU_POD_ID:-local}
     extra_hosts:
       - host.docker.internal:host-gateway
-    image: jcr.savorcare.com/ghcr/firecrawl/firecrawl@sha256:1910ef022706238c7d13c0e191b9a080efcf10aab049d776ba321abd8dc512ca
+    image: jcr.savorcare.com/ghcr/firecrawl/firecrawl@sha256:966ef7f9a385e1f27844d2d5a7037e9c01558481c3a94614df147002596c6f87
     labels:
       - traefik.enable=true
       - traefik.http.routers.firecrawl.rule=Host(`firecrawl.savorcare.com`)
@@ -237,19 +240,17 @@ services:
       HTTP_STREAMABLE_SERVER: "true"
     expose:
       - "3000"
-    image: jcr.savorcare.com/ghcr/firecrawl/firecrawl-mcp-server@sha256:f996e9612f57dd81ec45f362c7c0b510155cfe6e27885c123fc4b8a9eb896e87
+    image: jcr.savorcare.com/ghcr/firecrawl/firecrawl-mcp-server@sha256:2a3a2b2a2d0c36e114061e5eb885f45e48941d7d006d556e98fa671a155479e2
     labels:
       - traefik.enable=true
       - traefik.docker.network=reverse-proxy
-      - traefik.http.routers.mcp-fc.rule=Host(`firecrawl.savorcare.com`) && (PathPrefix(`/v2/mcp`)
-        || PathPrefix(`/mcp`) || PathPrefix(`/sse`) || PathPrefix(`/messages`))
+      - traefik.http.routers.mcp-fc.rule=Host(`firecrawl.savorcare.com`) && (PathPrefix(`/v2/mcp`) || PathPrefix(`/mcp`) || PathPrefix(`/sse`) || PathPrefix(`/messages`))
       - traefik.http.routers.mcp-fc.entrypoints=websecure
       - traefik.http.routers.mcp-fc.tls.certresolver=myresolver
       - traefik.http.routers.mcp-fc.tls.domains[0].main=savorcare.com
       - traefik.http.routers.mcp-fc.tls.domains[0].sans=*.savorcare.com
       - traefik.http.routers.mcp-fc.middlewares=mcp-legacy-to-v2
-      - traefik.http.routers.mcp-fchttp.rule=Host(`firecrawl.savorcare.com`) && (PathPrefix(`/v2/mcp`)
-        || PathPrefix(`/mcp`) || PathPrefix(`/sse`) || PathPrefix(`/messages`))
+      - traefik.http.routers.mcp-fchttp.rule=Host(`firecrawl.savorcare.com`) && (PathPrefix(`/v2/mcp`) || PathPrefix(`/mcp`) || PathPrefix(`/sse`) || PathPrefix(`/messages`))
       - traefik.http.routers.mcp-fchttp.entrypoints=web
       - traefik.http.routers.mcp-fchttp.middlewares=mcp-legacy-to-v2
       - traefik.http.middlewares.mcp-legacy-to-v2.replacepathregex.regex=^/mcp(/.*)?$$
@@ -295,7 +296,7 @@ services:
     image: jcr.savorcare.com/docker/foundationdb/foundationdb:7.3.63
     networks:
       backend: null
-    restart: 'no'
+    restart: "no"
     volumes:
       - source: fdb-cluster-file
         target: /var/fdb
@@ -306,7 +307,15 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-    image: jcr.savorcare.com/ghcr/firecrawl/nuq-postgres@sha256:aed86f62858f29bd971abddcdeb301c12888098d2cf5d33c1ba42b053bc460f6
+    healthcheck:
+      interval: 5s
+      retries: 5
+      start_period: 5s
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}
+      timeout: 5s
+    image: jcr.savorcare.com/ghcr/firecrawl/nuq-postgres@sha256:9b638af78d99873bc0ba2b57c9cbcd01df6ce96efeaa72d36cfbe0f76521e8fc
     logging:
       driver: json-file
       options:
@@ -321,6 +330,26 @@ services:
         target: /var/lib/postgresql/data
         type: volume
         volume: {}
+  papers-service:
+    container_name: firecrawl-papers-service
+    environment:
+      APIFY_ROTATOR_BASE_URL: ${APIFY_ROTATOR_BASE_URL:-http://api-key-rotator:8788/apify}
+      CORE_API_KEY: ${CORE_API_KEY:-}
+      FIRECRAWL_BASE_URL: ${FIRECRAWL_BASE_URL:-http://mcpo:8000/firecrawl}
+      IEEE_APIKEY: ${IEEE_APIKEY:-}
+      MCPO_API_KEY: ${MCPO_API_KEY:-}
+      NCBI_API_KEY: ${NCBI_API_KEY:-}
+      SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
+      TAVILY_BASE_URL: ${TAVILY_BASE_URL:-http://api-key-rotator:8788/tavily}
+      UNPAYWALL_EMAIL: ${UNPAYWALL_EMAIL:-}
+      ZENODO_ACCESS_TOKEN: ${ZENODO_ACCESS_TOKEN:-}
+      ZHIHUIYA_APIKEY: ${ZHIHUIYA_APIKEY:-}
+    image: jcr.savorcare.com/ghcr/xyonium/firecrawl-papers-service@sha256:2dafc29c79978efd60c72bebd6384c1cad3ff3cf3e07a074acf8c4d4e55bd28b
+    networks:
+      backend: null
+      owui: null
+      reverse-proxy: null
+    restart: unless-stopped
   pdf-ocr:
     container_name: firecrawl-pdf-ocr
     environment:
@@ -428,26 +457,6 @@ services:
     image: jcr.savorcare.com/ghcr/xyonium/firecrawl-research-proxy@sha256:595283bb0b3aca36e3b5a3119c313ccaaefe60982beed3751d5f612f061424e1
     networks:
       backend: null
-      reverse-proxy: null
-    restart: unless-stopped
-  papers-service:
-    container_name: firecrawl-papers-service
-    environment:
-      APIFY_ROTATOR_BASE_URL: ${APIFY_ROTATOR_BASE_URL:-http://api-key-rotator:8788}
-      CORE_API_KEY: ${CORE_API_KEY:-}
-      FIRECRAWL_BASE_URL: ${FIRECRAWL_BASE_URL:-http://mcpo:8000/firecrawl}
-      IEEE_APIKEY: ${IEEE_APIKEY:-}
-      MCPO_API_KEY: ${MCPO_API_KEY:-}
-      NCBI_API_KEY: ${NCBI_API_KEY:-}
-      SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
-      UNPAYWALL_EMAIL: ${UNPAYWALL_EMAIL:-}
-      TAVILY_BASE_URL: ${TAVILY_BASE_URL:-http://api-key-rotator:8788/tavily}
-      ZENODO_ACCESS_TOKEN: ${ZENODO_ACCESS_TOKEN:-}
-      ZHIHUIYA_APIKEY: ${ZHIHUIYA_APIKEY:-}
-    image: jcr.savorcare.com/ghcr/xyonium/firecrawl-papers-service@sha256:2dafc29c79978efd60c72bebd6384c1cad3ff3cf3e07a074acf8c4d4e55bd28b
-    networks:
-      backend: null
-      owui: null
       reverse-proxy: null
     restart: unless-stopped
 volumes:
