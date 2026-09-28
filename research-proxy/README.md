@@ -39,13 +39,13 @@ code search 必须登录（10 req/min/token，独立桶，按 token 不按 IP）
 | `GITHUB_TOKENS` | 空 | 逗号分隔；**空则 code search 返回 503** |
 | `LOG_LEVEL` | `INFO` | |
 
-密钥走 Portainer stack env，**不进 git**。
+密钥走部署平台的 stack env，**不进 git**。
 
 ## 部署
 
 镜像由本分支的 `.github/workflows/research-proxy-image.yml` 构建：
 推 `research-proxy/**` 改动 → GH Actions buildx 推 `ghcr.io/xyonium/firecrawl-research-proxy`
-→ 把 digest 钉回两个 compose 文件 → Portainer 看到 compose diff 拉新镜像。
+→ 把 digest 钉回两个 compose 文件 → 部署平台看到 compose diff 拉新镜像。
 compose 里引用走 mirror：`jcr.savorcare.com/ghcr/xyonium/firecrawl-research-proxy`。
 
 本地手动构建：先 `docker pull jcr.savorcare.com/docker/library/python:3.12-slim`

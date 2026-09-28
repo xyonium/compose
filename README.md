@@ -1,12 +1,12 @@
-# portainer-stack
+# deploy
 
-这个分支是 Portainer 部署 firecrawl 的专用分支，与 main 完全独立（orphan branch），只包含部署所需文件：
+这个分支是 firecrawl 部署的专用分支（平台无关的 compose 单分支；2026-09-28 由 portainer-stack 改名而来），与 main 完全独立（orphan branch），只包含部署所需文件：
 
 | 文件 | 用途 | 谁来改 |
 |---|---|---|
-| `docker-compose.yaml` | **预合并生成文件**：上游 compose + Portainer override 合并后的最终结果，且 firecrawl 系镜像已按 digest 钉版，Portainer 直接部署它（`${VAR}` 变量保留，仍由 Portainer 的 stack env 注入） | **只由机器人生成**，手改会被覆盖 |
+| `docker-compose.yaml` | **预合并生成文件**：上游 compose + deploy override 合并后的最终结果，且 firecrawl 系镜像已按 digest 钉版，部署平台直接部署它（`${VAR}` 变量保留，仍由部署平台的 stack env 注入） | **只由机器人生成**，手改会被覆盖 |
 | `docker-compose.upstream.yaml` | 上游 [firecrawl/firecrawl](https://github.com/firecrawl/firecrawl) 的原样拷贝 | **只由机器人改** |
-| `docker-compose.portainer.yaml` | 我们的全部自定义（镜像源、restart、traefik、reverse-proxy 网络、api 启动 patch、数据卷） | **要调整部署只改这个文件** |
+| `docker-compose.deploy.yaml` | 我们的全部自定义（镜像源、restart、traefik、reverse-proxy 网络、api 启动 patch、数据卷） | **要调整部署只改这个文件** |
 | `research-proxy/` | research 上游 shim 源码（FastAPI）：桥接 papers-service（/papers/*）+ reach-mcp（/reach/read_url，mcpo）+ GitHub API，让 cloud-only 的 research papers / similar / read / code search 端点自托管可用。镜像由本分支的 `research-proxy-image` workflow 构建到 ghcr 并把 digest 钉回 compose | 手改源码，推送后自动出图+钉版 |
 | `papers-service/` | paper-search-mcp 的替代（FastAPI，端口 3200）：research-proxy 的 /papers/* 上游。检索直连公开学术 API（镜像构建时打进 [paper-search](https://github.com/xyonium/paper-search) 仓库 tool.py 的全部直连适配器，含 scholar 三级链），read 轻量直连，读不了 404 由 shim 落 reach-mcp。镜像由 `papers-service-image` workflow 构建+钉版 | 手改源码，推送后自动出图+钉版；tool.py 升级后手动 workflow_dispatch |
 | `pdf-ocr/` | PDF OCR 适配器源码（FastAPI）：实现 RunPod MU serverless 契约，转发到自托管 MinerU，让扫描件/图片型 PDF 走自己的 GPU。镜像由 `pdf-ocr-image` workflow 构建+钉版 | 手改源码，推送后自动出图+钉版 |
@@ -16,7 +16,7 @@
 - api 服务设 `RESEARCH_PROXY_URL=http://research-proxy:3100` 后才会挂载
   `/v2/search/research/*` 与 `/v2/search/developer` 路由；MCP 的 research 工具组与
   search 的 `developer` category 全部走它
-- 需在 Portainer stack env 配：`GITHUB_TOKENS`（逗号分隔多 token 轮询，code search
+- 需在部署平台的 stack env 配：`GITHUB_TOKENS`（逗号分隔多 token 轮询，code search
   10 req/min/token）、`SEMANTIC_SCHOLAR_API_KEY`（可选但强烈建议，否则 S2 易 429）
 - `/papers/*` 上游走本栈 papers-service（`PAPERS_BASE_URL` 默认
   `http://papers-service:3200`）；`/reach/read_url` 仍走 mcpo（`REACH_BASE_URL` 默认
@@ -79,10 +79,10 @@ Compose path 保持默认的 `docker-compose.yaml` 不变，**只需把分支指
   ```bash
   curl -X POST "https://<portainer地址>/api/stacks/<stack-id>/git?endpointId=1" \
     -H "X-API-Key: <token>" -H "Content-Type: application/json" \
-    -d '{"RepositoryReferenceName": "refs/heads/portainer-stack"}'
+    -d '{"RepositoryReferenceName": "refs/heads/deploy"}'
   ```
   回到 stack 页面点 **Pull and redeploy**。（stack-id 在 stack 页面的 URL 里）
-- 方式二（重建 stack）：删掉旧 stack 后重新创建，创建表单里分支填 `refs/heads/portainer-stack`。
+- 方式二（重建 stack）：删掉旧 stack 后重新创建，创建表单里分支填 `refs/heads/deploy`。
   先把 env 变量复制出来再删；compose 里 `name: firecrawl` 已固定项目名，数据卷（firecrawl_redis 等）会自动挂回，**数据不丢**；若用了 webhook 自动更新，新 stack 的 webhook URL 会变，记得换。
 - 方式三（升级到 Portainer 2.45+）：stack 页面出现 **Edit git settings**，可直接改分支，不用重建。
 
@@ -91,7 +91,7 @@ Compose path 保持默认的 `docker-compose.yaml` 不变，**只需把分支指
 
 ## 同步机制
 
-`main` 分支上的 `.github/workflows/portainer-stack-sync.yml` **每月 5 日 03:42 UTC**（北京时间 11:42）运行
+`main` 分支上的 `.github/workflows/deploy-sync.yml` **每月 5 日 03:42 UTC**（北京时间 11:42）运行
 （GitHub 定时任务只跑默认分支，所以工作流放在 main；想临时同步可在 Actions 页面手动 Run workflow）：
 
 1. 拉取上游最新 compose → `docker-compose.upstream.yaml`
@@ -106,6 +106,6 @@ Compose path 保持默认的 `docker-compose.yaml` 不变，**只需把分支指
 上游若做了与 override 不兼容的改动（比如删除/重命名某个 service），Action 会**失败并通知**，
 stack 保持旧版本不受影响——不会半夜悄悄挂掉。修好后在 Actions 页面手动 Re-run 即可。
 
-回滚：分支上 revert 对应的 sync commit 再让 Portainer redeploy 即可（digest 历史都在 git 里）。
+回滚：分支上 revert 对应的 sync commit 再让部署平台 redeploy 即可（digest 历史都在 git 里）。
 
 注意：若仓库长期无活动，GitHub 可能自动暂停定时任务（会提前发邮件提醒），重新 enable 即可。

@@ -35,7 +35,7 @@ MinerU 3.x 通常同步完成；若返回 pending 状态则按 `task_id` 轮询 
 
 镜像由本分支的 `.github/workflows/pdf-ocr-image.yml` 构建：推 `pdf-ocr/**` 改动 →
 GH Actions buildx 推 `ghcr.io/xyonium/firecrawl-pdf-ocr` → digest 钉回两个 compose
-→ Portainer 看到 compose diff 拉新镜像。compose 引用走 mirror：
+→ 部署平台看到 compose diff 拉新镜像。compose 引用走 mirror：
 `jcr.savorcare.com/ghcr/xyonium/firecrawl-pdf-ocr`。
 
 本地手动构建同 research-proxy：先经 mirror pull base image 再 tag。

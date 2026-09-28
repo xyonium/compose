@@ -1,13 +1,13 @@
 name: Build research-proxy image
 
-# research-proxy 源码随 portainer-stack 分支走（部署单分支），所以镜像构建
+# research-proxy 源码随 deploy 分支走（部署单分支），所以镜像构建
 # 工作流也放这个分支（push 触发要求工作流文件存在于被推送的分支上）。
-# 构建后把新 digest 钉回两个 compose 文件——compose diff 驱动 Portainer 更新，
+# 构建后把新 digest 钉回两个 compose 文件——compose diff 驱动部署平台更新，
 # 与上游同步机器人同一思路。paths 过滤不含 compose 文件，钉版提交不会自激。
 
 on:
   push:
-    branches: [portainer-stack]
+    branches: [deploy]
     paths:
       - "research-proxy/**"
       - ".github/workflows/research-proxy-image.yml"
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: portainer-stack
+          ref: deploy
 
       - uses: docker/login-action@v3
         with:
@@ -58,7 +58,7 @@ jobs:
           digest=$(docker buildx imagetools inspect "ghcr.io/xyonium/firecrawl-research-proxy:latest" --format '{{.Manifest.Digest}}')
           echo "pinning ${image}@${digest}"
           # EOL 锚定，与其他 pin 同一理由（镜像名互为前缀时防误伤）
-          for f in docker-compose.portainer.yaml docker-compose.yaml; do
+          for f in docker-compose.deploy.yaml docker-compose.yaml; do
             sed -i -E "s#${image}(:[[:alnum:]_.-]+)?(@sha256:[[:xdigit:]]{64})?[[:space:]]*\$#${image}@${digest}#" "$f"
             grep -q "${image}@${digest}" "$f"
           done
@@ -67,12 +67,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docker-compose.portainer.yaml docker-compose.yaml
+          git add docker-compose.deploy.yaml docker-compose.yaml
           if git diff --cached --quiet; then
             echo "digest unchanged"
           else
             git commit -m "ci: pin research-proxy digest ($(date -u +%F) ${GITHUB_SHA:0:7})"
             # 与 papers-service-image 并发时可能撞 push：先 rebase 再推
-            git pull --rebase origin portainer-stack
-            git push origin portainer-stack
+            git pull --rebase origin deploy
+            git push origin deploy
           fi

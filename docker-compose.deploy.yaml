@@ -1,5 +1,5 @@
-# Portainer 自定义层：与上游 docker-compose.yaml 合并使用
-# docker compose -f docker-compose.yaml -f docker-compose.portainer.yaml up -d
+# 部署自定义层（deploy 分支）：与上游 docker-compose.yaml 合并使用
+# docker compose -f docker-compose.yaml -f docker-compose.deploy.yaml up -d
 services:
   playwright-service:
     image: jcr.savorcare.com/ghcr/firecrawl/playwright-service:latest
@@ -21,7 +21,7 @@ services:
       RESEARCH_PROXY_URL: "http://research-proxy:3100"
       # 两阶段 parse 上传（/v2/parse/upload-url → PUT → /v2/parse?uploadRef=）的
       # ref 签名密钥。本栈 ENV=local，上传走内存 driver，无需 GCS。
-      # 值在 Portainer stack env 里配，不进 git。
+      # 值在部署平台的 stack env 里配，不进 git。
       PARSE_UPLOAD_REF_SECRET: ${PARSE_UPLOAD_REF_SECRET:-}
       # PDF 走容器内原生 Rust 提取（firecrawl-rs 已在镜像内），复杂排版质量优于
       # pdf-parse 兜底；扫描件 fast 模式会明确报 OCR-required。
@@ -111,7 +111,7 @@ services:
       PAPERS_BASE_URL: ${PAPERS_BASE_URL:-http://papers-service:3200}
       REACH_BASE_URL: ${REACH_BASE_URL:-http://mcpo:8000}
       PAPER_SOURCES: ${PAPER_SOURCES:-arxiv,semantic,pubmed,openalex,crossref,europepmc,dblp,hal,pmc}
-      # 以下密钥在 Portainer stack env 里配，不进 git：
+      # 以下密钥在部署平台的 stack env 里配，不进 git：
       SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
       GITHUB_TOKENS: ${GITHUB_TOKENS:-}
     networks:
@@ -129,7 +129,7 @@ services:
     container_name: firecrawl-papers-service
     restart: unless-stopped
     environment:
-      # 密钥在 Portainer stack env 里配，不进 git（与 OWUI tool 同名语义）：
+      # 密钥在部署平台的 stack env 里配，不进 git（与 OWUI tool 同名语义）：
       SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
       NCBI_API_KEY: ${NCBI_API_KEY:-}
       CORE_API_KEY: ${CORE_API_KEY:-}
