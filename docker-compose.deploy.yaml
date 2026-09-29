@@ -339,7 +339,7 @@ services:
               "\n"
             );
             c = c.replace(
-              "\n\n${ALEXANDRIA_SEARCH_LEAD}\n\nOn an authenticated session, tool matches describe available capabilities; \\`firecrawl_find_tools\\` returns their contracts and \\`firecrawl_scrape\\` with an \\`alexandria\\` body executes a selected capability. Keyless sessions get no Alexandria matches in data.tools.",
+              "\n\n$${ALEXANDRIA_SEARCH_LEAD}\n\nOn an authenticated session, tool matches describe available capabilities; \\`firecrawl_find_tools\\` returns their contracts and \\`firecrawl_scrape\\` with an \\`alexandria\\` body executes a selected capability. Keyless sessions get no Alexandria matches in data.tools.",
               ""
             );
             if (c !== before) { modified = true; logs.push("alexandria-desc-strip"); }
