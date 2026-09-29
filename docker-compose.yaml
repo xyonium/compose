@@ -255,6 +255,39 @@ services:
             if (c !== before) { modified = true; logs.push("research-param-desc"); }
           }
 
+          // 12. Disable find_tools (cloud-only): self-hosted api has no
+          //     Alexandria catalogue, every call fails with "Alexandria
+          //     requires an API key on a team with Alexandria access".
+          //     The registration is a single unconditional statement.
+          if (c.includes("server.addTool(findToolsTool);")) {
+            c = c.replace(
+              "server.addTool(findToolsTool);",
+              "/* find-tools-disabled: no Alexandria catalogue in self-host */"
+            );
+            modified = true; logs.push("find-tools-disable");
+          }
+
+          // 13. Strip dead Alexandria guidance from the scrape/search
+          //     descriptions: the paragraphs point at find_tools and the
+          //     alexandria scrape mode, which cannot work self-hosted and
+          //     otherwise lure the model into guaranteed-failure calls.
+          //     Delete whole template paragraphs; anchors verified unique.
+          //     Param-level .describe() mentions are left alone (dead but
+          //     harmless). search-surface variants are /v2/mcp-search only,
+          //     not used here.
+          {
+            const before = c;
+            c = c.replace(
+              "\n\nOn an authenticated session with Alexandria access, \\`firecrawl_search\\` with \\`sources\\` unset and \\`firecrawl_find_tools\\` can discover providers for the same fields across several pages; a matching provider returns typed records in one call. Keyless sessions have no provider matches.\n\nAlexandria mode, on an authenticated session with Alexandria access: \\`alexandria\\` selects catalogued capability execution and is mutually exclusive with \\`url\\`.\n",
+              "\n"
+            );
+            c = c.replace(
+              "\n\n${ALEXANDRIA_SEARCH_LEAD}\n\nOn an authenticated session, tool matches describe available capabilities; \\`firecrawl_find_tools\\` returns their contracts and \\`firecrawl_scrape\\` with an \\`alexandria\\` body executes a selected capability. Keyless sessions get no Alexandria matches in data.tools.",
+              ""
+            );
+            if (c !== before) { modified = true; logs.push("alexandria-desc-strip"); }
+          }
+
           if (modified) {
             fs.writeFileSync(f, c);
             n++;
