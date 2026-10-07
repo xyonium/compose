@@ -96,7 +96,7 @@ services:
   # api 启动时 sed 把 dist 里硬编码的 api.runpod.ai 改指到本服务；失败一律
   # 502，api 会降级回容器内 pdf-parse。镜像由 pdf-ocr-image workflow 云端构建钉版。
   pdf-ocr:
-    image: jcr.savorcare.com/ghcr/xyonium/firecrawl-pdf-ocr@sha256:399de76e4b2a377582d3bd64214f6f222078870719ee6c8e20a427ccd1787dc0
+    image: jcr.savorcare.com/ghcr/xyonium/firecrawl-pdf-ocr@sha256:0e71e8c65884cd18ed61fb683fe545db85986f06288facd4341a5336ec834861
     container_name: firecrawl-pdf-ocr
     restart: unless-stopped
     environment:
