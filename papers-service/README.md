@@ -71,7 +71,7 @@ paper-search-mcp 退役后承接 `download_paper_to_knowledge` 的 OA 兜底链�
 | `IEEE_APIKEY` / `ZHIHUIYA_APIKEY` / `ZENODO_ACCESS_TOKEN` | 对应 key-gated 源 |
 | `FIRECRAWL_BASE_URL` | scholar 链 tier1 + dblp Anubis 兜底，如 `http://mcpo:8000/firecrawl` |
 | `TAVILY_BASE_URL` | scholar 链 tier2 + tavily 源，如 `http://api-key-rotator:8788/tavily` |
-| `APIFY_ROTATOR_BASE_URL` | scholar 链 tier3，如 `http://api-key-rotator:8788` |
+| `APIFY_ROTATOR_BASE_URL` | scholar 链 tier3，如 `http://api-key-rotator:8788/apify` |
 | `MCPO_API_KEY` | mcpo 的 `--api-key`（firecrawl 走 mcpo 时需要） |
 | `UNPAYWALL_EMAIL` | download_with_fallback 的 Unpaywall 请求标识（匿名有配额限制） |
 | `PAPER_SEARCH_TOOL_PATH` | 本地开发时覆盖 tool.py 路径（默认 `/srv/vendor/tool.py`） |
@@ -80,7 +80,7 @@ paper-search-mcp 退役后承接 `download_paper_to_knowledge` 的 OA 兜底链�
 
 镜像由 `../.github/workflows/papers-service-image.yml` 在 push 到本分支
 （paths: `papers-service/**`）时构建推 `ghcr.io/xyonium/firecrawl-papers-service`
-并把 digest 钉回两个 compose 文件。compose 服务块见 `../docker-compose.portainer.yaml`
+并把 digest 钉回两个 compose 文件。compose 服务块见 `../docker-compose.deploy.yaml`
 （`papers-service`，端口 3200，内部服务不过 traefik）。
 
 **升级 tool.py**：tool.py 在另一个仓库，其更新不触发本工作流——

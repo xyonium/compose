@@ -1,5 +1,7 @@
-# Portainer 自定义层：与上游 docker-compose.yaml 合并使用
-# docker compose -f docker-compose.yaml -f docker-compose.portainer.yaml up -d
+# 部署自定义层（deploy 分支）：唯一手改文件。deploy-sync bot 把它与
+# docker-compose.upstream.yaml 合并、钉 digest 后生成 docker-compose.yaml，
+# 部署平台（Arcane）只消费生成品。请勿手动合并两文件部署——本文件里 api/mcp
+# 等上游镜像不带 digest，会覆盖掉生成品里的钉版。
 services:
   playwright-service:
     image: jcr.savorcare.com/ghcr/firecrawl/playwright-service:latest
@@ -21,7 +23,7 @@ services:
       RESEARCH_PROXY_URL: "http://research-proxy:3100"
       # 两阶段 parse 上传（/v2/parse/upload-url → PUT → /v2/parse?uploadRef=）的
       # ref 签名密钥。本栈 ENV=local，上传走内存 driver，无需 GCS。
-      # 值在 Portainer stack env 里配，不进 git。
+      # 值在部署平台的 stack env 里配，不进 git。
       PARSE_UPLOAD_REF_SECRET: ${PARSE_UPLOAD_REF_SECRET:-}
       # PDF 走容器内原生 Rust 提取（firecrawl-rs 已在镜像内），复杂排版质量优于
       # pdf-parse 兜底；扫描件 fast 模式会明确报 OCR-required。
@@ -63,6 +65,16 @@ services:
   rabbitmq:
     image: jcr.savorcare.com/docker/rabbitmq:3-management
     restart: unless-stopped
+    # 放宽上游健康检查窗口：全栈同时重建时 RabbitMQ 冷启动实测 ~27s，而上游默认
+    # start_period 5s + retries 3×5s ≈ 20s 就被判 unhealthy，compose 随即中止启动，
+    # api 永远停在 created（2026-09-28 命中）。start_period 只豁免早期失败，
+    # 不影响首次成功即转 healthy 的速度。
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'check_running']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     volumes:
       - /tmp/firecrawl/rabiitmq:/var/lib/rabbitmq
 
@@ -84,7 +96,7 @@ services:
   # api 启动时 sed 把 dist 里硬编码的 api.runpod.ai 改指到本服务；失败一律
   # 502，api 会降级回容器内 pdf-parse。镜像由 pdf-ocr-image workflow 云端构建钉版。
   pdf-ocr:
-    image: jcr.savorcare.com/ghcr/xyonium/firecrawl-pdf-ocr@sha256:c068abcb0ad79bb136aea60c63a1158e3db3433f77ed0c3ce6087c5eff75a353
+    image: jcr.savorcare.com/ghcr/xyonium/firecrawl-pdf-ocr@sha256:399de76e4b2a377582d3bd64214f6f222078870719ee6c8e20a427ccd1787dc0
     container_name: firecrawl-pdf-ocr
     restart: unless-stopped
     environment:
@@ -101,7 +113,7 @@ services:
   # 改代码推本分支即自动出图更新（CE 靠 compose diff 拉新镜像，无需本地 build）。
   # mcpo 容器（reach-mcp 网关）经 reverse-proxy 网络以名字 mcpo 访问。
   research-proxy:
-    image: jcr.savorcare.com/ghcr/xyonium/firecrawl-research-proxy@sha256:595283bb0b3aca36e3b5a3119c313ccaaefe60982beed3751d5f612f061424e1
+    image: jcr.savorcare.com/ghcr/xyonium/firecrawl-research-proxy@sha256:a8537d0c2b8ebc3d01d0e98bd4aa6c372d48ac8c0977ea2a770964a9c8ad5d3e
     container_name: firecrawl-research-proxy
     restart: unless-stopped
     environment:
@@ -111,7 +123,7 @@ services:
       PAPERS_BASE_URL: ${PAPERS_BASE_URL:-http://papers-service:3200}
       REACH_BASE_URL: ${REACH_BASE_URL:-http://mcpo:8000}
       PAPER_SOURCES: ${PAPER_SOURCES:-arxiv,semantic,pubmed,openalex,crossref,europepmc,dblp,hal,pmc}
-      # 以下密钥在 Portainer stack env 里配，不进 git：
+      # 以下密钥在部署平台的 stack env 里配，不进 git：
       SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
       GITHUB_TOKENS: ${GITHUB_TOKENS:-}
     networks:
@@ -125,11 +137,11 @@ services:
   # 镜像由 .github/workflows/papers-service-image.yml 构建推 ghcr 并钉 digest 回本文件；
   # tool.py 升级后手动 workflow_dispatch 一把即出新镜像。
   papers-service:
-    image: jcr.savorcare.com/ghcr/xyonium/firecrawl-papers-service@sha256:2dafc29c79978efd60c72bebd6384c1cad3ff3cf3e07a074acf8c4d4e55bd28b
+    image: jcr.savorcare.com/ghcr/xyonium/firecrawl-papers-service@sha256:e029d23c863f7fffd81535c8183594537a4e71132c9589113fbc17ec7317d6d6
     container_name: firecrawl-papers-service
     restart: unless-stopped
     environment:
-      # 密钥在 Portainer stack env 里配，不进 git（与 OWUI tool 同名语义）：
+      # 密钥在部署平台的 stack env 里配，不进 git（与 OWUI tool 同名语义）：
       SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
       NCBI_API_KEY: ${NCBI_API_KEY:-}
       CORE_API_KEY: ${CORE_API_KEY:-}
@@ -140,7 +152,7 @@ services:
       # 指向 api-key-rotator → 官方云）；tavily/apify 走 rotator（在 owui 网络上）：
       FIRECRAWL_BASE_URL: ${FIRECRAWL_BASE_URL:-http://mcpo:8000/firecrawl}
       TAVILY_BASE_URL: ${TAVILY_BASE_URL:-http://api-key-rotator:8788/tavily}
-      APIFY_ROTATOR_BASE_URL: ${APIFY_ROTATOR_BASE_URL:-http://api-key-rotator:8788}
+      APIFY_ROTATOR_BASE_URL: ${APIFY_ROTATOR_BASE_URL:-http://api-key-rotator:8788/apify}
       MCPO_API_KEY: ${MCPO_API_KEY:-}
       # download_with_fallback 的 Unpaywall 请求标识（匿名有配额限制）
       UNPAYWALL_EMAIL: ${UNPAYWALL_EMAIL:-}
@@ -187,8 +199,14 @@ services:
           //    operators sentence. Upstream removed the old "**Sources:**" anchor
           //    (v3.24-ish), so anchor on "the set is non-exhaustive." instead;
           //    idempotency guard checks the inserted marker itself.
+          //    Escape via JSON.stringify minus the wrapping quotes: since the
+          //    2026-09-28 image the first anchor occurrence sits inside a
+          //    double-quoted .describe("...") in the bundle, so a raw " would
+          //    terminate the string and break the whole file (crash loop).
+          //    \" is harmless in template-literal / single-quoted contexts too.
           if (!c.includes("**SearXNG !bang:**") && c.includes("the set is non-exhaustive.")) {
-            c = c.replace("the set is non-exhaustive.", "the set is non-exhaustive. " + bang);
+            const bangEsc = JSON.stringify(bang).slice(1, -1);
+            c = c.replace("the set is non-exhaustive.", "the set is non-exhaustive. " + bangEsc);
             modified = true; logs.push("!bang");
           }
 
@@ -261,6 +279,70 @@ services:
               "REMOTE PARSE NOTE: this MCP server is a remote deployment; filePath is resolved on the server filesystem and caller-local paths fail with ENOENT. To parse a caller-local file, POST it as multipart/form-data to https://firecrawl.savorcare.com/v2/parse (field file, plus an optional options JSON string). Parse one supported document into markdown"
             );
             modified = true; logs.push("parse-remote-note");
+          }
+
+          // 10. Disable credit_usage tool (cloud-only): self-hosted api has no
+          //     Autumn billing backend (AUTUMN_SECRET_KEY missing -> 500). The
+          //     tool registration call site is unique; commenting it out drops
+          //     the tool plus its creditUsageOutputSchema cleanly. Upstream has
+          //     no env switch for this (checked all FIRECRAWL_* env reads).
+          if (c.includes("registerUsageTools(server, getClient);")) {
+            c = c.replace(
+              "registerUsageTools(server, getClient);",
+              "/* usage-tools-disabled: no Autumn billing backend in self-host */"
+            );
+            modified = true; logs.push("usage-tools-disable");
+          }
+
+          // 11. Fill the empty .describe() slots on research tool params
+          //     (upstream shipped them blank; the tool descriptions carry most
+          //     of the semantics, so keep these to what a caller cannot infer
+          //     from the name — no apostrophes here, see patch 9 note).
+          //     Anchors are the unique zod param blocks.
+          {
+            const before = c;
+            c = c.replace(
+              "seed_ids: z6.array(z6.string()).min(1).max(10),\n      intent: z6.string().min(1),\n      mode: z6.enum([\"similar\", \"citers\", \"references\"]).optional(),\n      k: z6.number().int().min(1).max(500).optional(),",
+              "seed_ids: z6.array(z6.string()).min(1).max(10).describe(\"1-10 paper IDs; the first is the seed, the rest are anchors.\"),\n      intent: z6.string().min(1).describe(\"What the related papers should be about; used to rank candidates.\"),\n      mode: z6.enum([\"similar\", \"citers\", \"references\"]).optional().describe(\"similar (default): co-citation/bibliographic coupling; citers: papers citing the seed; references: papers the seed cites.\"),\n      k: z6.number().int().min(1).max(500).optional().describe(\"Number of ranked papers to return (default 10).\"),"
+            );
+            c = c.replace(
+              "question: z6.string().min(1),\n      k: z6.number().int().min(1).max(50).optional()",
+              "question: z6.string().min(1).describe(\"What to look for in the full text; passages are selected by relevance to it.\"),\n      k: z6.number().int().min(1).max(50).optional()"
+            );
+            if (c !== before) { modified = true; logs.push("research-param-desc"); }
+          }
+
+          // 12. Disable find_tools (cloud-only): self-hosted api has no
+          //     Alexandria catalogue, every call fails with "Alexandria
+          //     requires an API key on a team with Alexandria access".
+          //     The registration is a single unconditional statement.
+          if (c.includes("server.addTool(findToolsTool);")) {
+            c = c.replace(
+              "server.addTool(findToolsTool);",
+              "/* find-tools-disabled: no Alexandria catalogue in self-host */"
+            );
+            modified = true; logs.push("find-tools-disable");
+          }
+
+          // 13. Strip dead Alexandria guidance from the scrape/search
+          //     descriptions: the paragraphs point at find_tools and the
+          //     alexandria scrape mode, which cannot work self-hosted and
+          //     otherwise lure the model into guaranteed-failure calls.
+          //     Delete whole template paragraphs; anchors verified unique.
+          //     Param-level .describe() mentions are left alone (dead but
+          //     harmless). search-surface variants are /v2/mcp-search only,
+          //     not used here.
+          {
+            const before = c;
+            c = c.replace(
+              "\n\nOn an authenticated session with Alexandria access, \\`firecrawl_search\\` with \\`sources\\` unset and \\`firecrawl_find_tools\\` can discover providers for the same fields across several pages; a matching provider returns typed records in one call. Keyless sessions have no provider matches.\n\nAlexandria mode, on an authenticated session with Alexandria access: \\`alexandria\\` selects catalogued capability execution and is mutually exclusive with \\`url\\`.\n",
+              "\n"
+            );
+            c = c.replace(
+              "\n\n$${ALEXANDRIA_SEARCH_LEAD}\n\nOn an authenticated session, tool matches describe available capabilities; \\`firecrawl_find_tools\\` returns their contracts and \\`firecrawl_scrape\\` with an \\`alexandria\\` body executes a selected capability. Keyless sessions get no Alexandria matches in data.tools.",
+              ""
+            );
+            if (c !== before) { modified = true; logs.push("alexandria-desc-strip"); }
           }
 
           if (modified) {
