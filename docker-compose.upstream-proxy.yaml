@@ -1,0 +1,32 @@
+services:
+  proxy:
+    image: netbirdio/reverse-proxy:latest
+    container_name: netbird-proxy
+    ports:
+    - 51820:51820/udp
+    restart: unless-stopped
+    networks:
+    - netbird
+    depends_on:
+      netbird-server:
+        condition: service_started
+    env_file:
+    - ./proxy.env
+    volumes:
+    - netbird_proxy_certs:/certs
+    labels:
+    - traefik.enable=true
+    - traefik.tcp.routers.proxy-passthrough.entrypoints=websecure
+    - traefik.tcp.routers.proxy-passthrough.rule=HostSNI(`*`)
+    - traefik.tcp.routers.proxy-passthrough.tls.passthrough=true
+    - traefik.tcp.routers.proxy-passthrough.service=proxy-tls
+    - traefik.tcp.routers.proxy-passthrough.priority=1
+    - traefik.tcp.services.proxy-tls.loadbalancer.server.port=8443
+    - traefik.tcp.services.proxy-tls.loadbalancer.serverstransport=pp-v2@file
+    logging:
+      driver: json-file
+      options:
+        max-size: 500m
+        max-file: '2'
+volumes:
+  netbird_proxy_certs: null
