@@ -1,0 +1,139 @@
+name: netbird
+networks:
+  reverse-proxy:
+    external: true
+    name: reverse-proxy
+services:
+  dashboard:
+    container_name: netbird-dashboard
+    environment:
+      AUTH_AUDIENCE: netbird-dashboard
+      AUTH_AUTHORITY: https://netbird.savorcare.com/oauth2
+      AUTH_CLIENT_ID: netbird-dashboard
+      AUTH_CLIENT_SECRET: ""
+      AUTH_REDIRECT_URI: /nb-auth
+      AUTH_SILENT_REDIRECT_URI: /nb-silent-auth
+      AUTH_SUPPORTED_SCOPES: openid profile email groups
+      LETSENCRYPT_DOMAIN: none
+      NETBIRD_AGENT_NETWORK_ENABLED: "true"
+      NETBIRD_MGMT_API_ENDPOINT: https://netbird.savorcare.com
+      NETBIRD_MGMT_GRPC_API_ENDPOINT: https://netbird.savorcare.com
+      NGINX_SSL_PORT: "443"
+      USE_AUTH0: "false"
+    image: jcr.savorcare.com/docker/netbirdio/dashboard@sha256:70e0fc6dd3b7758148d182fb55ecd8d4f9ce01e9bba56c9389224e0b8354009d
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.netbird-dashboard.rule=Host(`netbird.savorcare.com`)
+      - traefik.http.routers.netbird-dashboard.entrypoints=websecure
+      - traefik.http.routers.netbird-dashboard.tls=true
+      - traefik.http.routers.netbird-dashboard.priority=1
+      - traefik.http.services.netbird-dashboard.loadbalancer.server.port=80
+      - traefik.http.routers.netbird-http.rule=Host(`netbird.savorcare.com`)
+      - traefik.http.routers.netbird-http.entrypoints=web
+      - traefik.http.routers.netbird-http.middlewares=http2https
+    logging:
+      driver: json-file
+      options:
+        max-file: "2"
+        max-size: 500m
+    networks:
+      reverse-proxy: null
+    restart: unless-stopped
+  netbird-server:
+    command:
+      - --config
+      - /etc/netbird/config.yaml
+    container_name: netbird-server
+    image: jcr.savorcare.com/docker/netbirdio/netbird-server@sha256:05b3d8d6d056e5062a2965d4d6e5d6d83f09f2bf9133947a8e5972e0e0e7a261
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.netbird-grpc.rule=Host(`netbird.savorcare.com`) && (PathPrefix(`/signalexchange.SignalExchange/`)
+        || PathPrefix(`/management.ManagementService/`))
+      - traefik.http.routers.netbird-grpc.entrypoints=websecure
+      - traefik.http.routers.netbird-grpc.tls=true
+      - traefik.http.routers.netbird-grpc.service=netbird-server-h2c
+      - traefik.http.routers.netbird-backend.rule=Host(`netbird.savorcare.com`) &&
+        (PathPrefix(`/relay`) || PathPrefix(`/ws-proxy/`) || PathPrefix(`/api`) ||
+        PathPrefix(`/oauth2`))
+      - traefik.http.routers.netbird-backend.entrypoints=websecure
+      - traefik.http.routers.netbird-backend.tls=true
+      - traefik.http.routers.netbird-backend.service=netbird-server
+      - traefik.http.services.netbird-server.loadbalancer.server.port=80
+      - traefik.http.services.netbird-server-h2c.loadbalancer.server.port=80
+      - traefik.http.services.netbird-server-h2c.loadbalancer.server.scheme=h2c
+    logging:
+      driver: json-file
+      options:
+        max-file: "2"
+        max-size: 500m
+    networks:
+      reverse-proxy: null
+    ports:
+      - mode: ingress
+        protocol: udp
+        published: "3478"
+        target: 3478
+    restart: unless-stopped
+    volumes:
+      - source: netbird_data
+        target: /var/lib/netbird
+        type: volume
+        volume: {}
+      - source: netbird_config
+        target: /etc/netbird
+        type: volume
+        volume: {}
+  proxy:
+    container_name: netbird-proxy
+    depends_on:
+      netbird-server:
+        condition: service_started
+        required: true
+    environment:
+      NB_PROXY_ACME_CERTIFICATES: "false"
+      NB_PROXY_ADDRESS: :8443
+      NB_PROXY_ALLOW_INSECURE: "true"
+      NB_PROXY_CERTIFICATE_DIRECTORY: /certs
+      NB_PROXY_DEBUG_LOGS: "false"
+      NB_PROXY_DOMAIN: netbird.savorcare.com
+      NB_PROXY_FORWARDED_PROTO: https
+      NB_PROXY_MANAGEMENT_ADDRESS: http://netbird-server:80
+      NB_PROXY_PRIVATE: "true"
+      NB_PROXY_PROXY_PROTOCOL: "false"
+      NB_PROXY_TOKEN: ${NB_PROXY_TOKEN}
+      NB_PROXY_WG_PORT: "51820"
+      NB_PROXY_WILDCARD_CERT_DIR: /wildcard-certs
+    image: jcr.savorcare.com/docker/netbirdio/reverse-proxy@sha256:6d6655b3f13f837d80cc44878033866713932d3c5c1381ed869af9542b523bc5
+    labels:
+      - traefik.enable=false
+    logging:
+      driver: json-file
+      options:
+        max-file: "2"
+        max-size: 500m
+    networks:
+      reverse-proxy: null
+    ports:
+      - mode: ingress
+        protocol: udp
+        published: "51820"
+        target: 51820
+    restart: unless-stopped
+    volumes:
+      - source: netbird_proxy_certs
+        target: /certs
+        type: volume
+        volume: {}
+      - bind:
+          create_host_path: true
+        read_only: true
+        source: /opt/traefik/certs
+        target: /wildcard-certs
+        type: bind
+volumes:
+  netbird_config:
+    name: netbird_netbird_config
+  netbird_data:
+    name: netbird_netbird_data
+  netbird_proxy_certs:
+    name: netbird_netbird_proxy_certs
