@@ -43,7 +43,9 @@ jobs:
           ! grep -q "^init_environment$" /tmp/nb-gs.sh || {
             echo "::error::entrypoint not stripped"; exit 1; }
           # 上游若重构脚本结构（函数改名/流程变化），这里大声失败而不是产出坏文件
-          ( source /tmp/nb-gs.sh
+          #（子 shell 内 set +u：上游脚本按非 strict 模式编写，会引用无默认值的可选变量
+          #  如 ${NETBIRD_AGENT_NETWORK}，外层 set -u 下会误炸——Task 7 干跑实证）
+          ( set +u; source /tmp/nb-gs.sh
             for fn in initialize_default_values configure_domain configure_reverse_proxy \
                       generate_configuration_files render_proxy_env; do
               type "$fn" >/dev/null || { echo "::error::missing function $fn"; exit 1; }
@@ -52,7 +54,7 @@ jobs:
           # 第一次渲染：option 1（现有 traefik）。CERTRESOLVER 留空 → 只生成 tls=true，
           # 即 docker1 固定证书风格；trustedPeers 警告属预期（config.yaml 是参考模板，
           # 真实值部署时按宿主填）
-          ( source /tmp/nb-gs.sh
+          ( set +u; source /tmp/nb-gs.sh
             export NETBIRD_DOMAIN=netbird.savorcare.com NETBIRD_NON_INTERACTIVE=true
             export NETBIRD_REVERSE_PROXY_TYPE=1 NETBIRD_TRAEFIK_EXTERNAL_NETWORK=reverse-proxy
             export NETBIRD_TRAEFIK_ENTRYPOINT=websecure NETBIRD_TRAEFIK_CERTRESOLVER=
@@ -62,7 +64,7 @@ jobs:
           test "$(grep -cE '^  traefik:' /tmp/nb-base/docker-compose.yml)" = 0
 
           # 第二次渲染：option 0 + proxy（LE email 必填，值只落在被丢弃的内建 traefik 里）
-          ( source /tmp/nb-gs.sh
+          ( set +u; source /tmp/nb-gs.sh
             export NETBIRD_DOMAIN=netbird.savorcare.com NETBIRD_NON_INTERACTIVE=true
             export NETBIRD_REVERSE_PROXY_TYPE=0 NETBIRD_ENABLE_PROXY=true \
                    NETBIRD_LETSENCRYPT_EMAIL=ops@savorcare.com
