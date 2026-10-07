@@ -1,10 +1,10 @@
 # firecrawl
 
-这个分支是 Portainer 部署 firecrawl 的专用分支，与 main 完全独立（orphan branch），只包含部署所需文件。现居 [xyonium/compose](https://github.com/xyonium/compose) 仓库——2026-09 从 xyonium/firecrawl 的 `portainer-stack` 分支整体迁入，**git 历史完整保留，digest 回滚链未断**，compose 文件内容与迁移前逐字节一致（迁移只改了 workflow/README 里的仓库与分支引用）：
+这个分支是部署 firecrawl 的专用分支，与 main 完全独立（orphan branch），只包含部署所需文件。现居 [xyonium/compose](https://github.com/xyonium/compose) 仓库——2026-09 从 xyonium/firecrawl 的 `portainer-stack` 分支整体迁入，**git 历史完整保留，digest 回滚链未断**，compose 文件内容与迁移前逐字节一致（迁移只改了 workflow/README 里的仓库与分支引用）：
 
 | 文件 | 用途 | 谁来改 |
 |---|---|---|
-| `docker-compose.yaml` | **预合并生成文件**：上游 compose + Portainer override 合并后的最终结果，且 firecrawl 系镜像已按 digest 钉版，Portainer 直接部署它（`${VAR}` 变量保留，仍由 Portainer 的 stack env 注入） | **只由机器人生成**，手改会被覆盖 |
+| `docker-compose.yaml` | **预合并生成文件**：上游 compose + 平台自定义层合并后的最终结果，且 firecrawl 系镜像已按 digest 钉版，部署平台直接使用它（`${VAR}` 变量保留，由平台的项目 env 注入） | **只由机器人生成**，手改会被覆盖 |
 | `docker-compose.upstream.yaml` | 上游 [firecrawl/firecrawl](https://github.com/firecrawl/firecrawl) 的原样拷贝 | **只由机器人改** |
 | `docker-compose.portainer.yaml` | 我们的全部自定义（镜像源、restart、traefik、reverse-proxy 网络、api 启动 patch、数据卷） | **要调整部署只改这个文件** |
 | `research-proxy/` | research 上游 shim 源码（FastAPI）：桥接 papers-service（/papers/*）+ reach-mcp（/reach/read_url，mcpo）+ GitHub API，让 cloud-only 的 research papers / similar / read / code search 端点自托管可用。镜像由本分支的 `research-proxy-image` workflow 构建到 ghcr 并把 digest 钉回 compose | 手改源码，推送后自动出图+钉版 |
@@ -16,7 +16,7 @@
 - api 服务设 `RESEARCH_PROXY_URL=http://research-proxy:3100` 后才会挂载
   `/v2/search/research/*` 与 `/v2/search/developer` 路由；MCP 的 research 工具组与
   search 的 `developer` category 全部走它
-- 需在 Portainer stack env 配：`GITHUB_TOKENS`（逗号分隔多 token 轮询，code search
+- 需在项目 env 配：`GITHUB_TOKENS`（逗号分隔多 token 轮询，code search
   10 req/min/token）、`SEMANTIC_SCHOLAR_API_KEY`（可选但强烈建议，否则 S2 易 429）
 - `/papers/*` 上游走本栈 papers-service（`PAPERS_BASE_URL` 默认
   `http://papers-service:3200`）；`/reach/read_url` 仍走 mcpo（`REACH_BASE_URL` 默认
@@ -68,29 +68,27 @@
 - **MCP 的 parse 工具**：local 模式下 `filePath` 在 **MCP 容器**文件系统上解析，客户端本地路径必 ENOENT。
   工具描述已注入 REMOTE PARSE NOTE 引导 agent 改用 HTTP multipart `POST /v2/parse`
 
-为什么是预合并单文件：Portainer 2.39 只有**创建** stack 时才能配 additional paths，
-已有 stack 改不了（2.45 的 "Edit git settings" 才行）。预合并后 Portainer 只需要一个 compose 文件，任何版本都行。
+为什么是预合并单文件：预合并后任何平台只需要一个 compose 文件即可部署，不依赖各平台对
+多文件合并 / additional paths 的支持差异（Arcane、手动 `docker compose` 都一样）。
 
-## Portainer 配置
+## 部署配置（Arcane）
 
-仓库地址 `https://github.com/xyonium/compose.git`，分支 `refs/heads/firecrawl`，Compose path 保持默认的 `docker-compose.yaml` 不变。
+compose 用本分支的 `docker-compose.yaml`（预合并单文件）；变量配在项目 env（.env）里，不进 git。
 
 从旧仓库（xyonium/firecrawl 的 portainer-stack 分支）切换过来：
 
-- 方式一（Portainer 2.45+，不重建 stack）：stack 页面 **Edit git settings**，Repository URL 改为
-  `https://github.com/xyonium/compose.git`、分支改为 `refs/heads/firecrawl`，保存后 **Pull and redeploy**。
-- 方式二（重建 stack）：先把 env 变量复制出来，删掉旧 stack 后重新创建，创建表单里仓库填
-  `https://github.com/xyonium/compose.git`、分支填 `refs/heads/firecrawl`。
-  compose 里 `name: firecrawl` 已固定项目名，数据卷（firecrawl_redis 等）会自动挂回，**数据不丢**；若用了 webhook 自动更新，新 stack 的 webhook URL 会变，记得换。
+- 先把旧部署的 env 变量复制出来
+- 在 Arcane 新建项目，compose 内容取本分支的 `docker-compose.yaml`，env 原样填入
+- compose 里 `name: firecrawl` 已固定项目名，数据卷（firecrawl_redis 等）会自动挂回，**数据不丢**
 
 切换时合并配置与旧分支当前内容逐字节一致（迁移未动任何 compose 文件），对容器是无扰动重建。
-切换完成后记得启用同步（见下节），并开启 **Automatic updates**（polling 或 webhook），机器人推送后 stack 自动更新。
+切换完成后记得启用同步（见下节）；机器人推送更新后按惯例同步到 Arcane 并重建。
 
 ## 同步机制
 
 同步工作流在 compose 仓库 `main` 分支的 `.github/workflows/sync-firecrawl.yml`
 （GitHub 定时任务只跑默认分支，所以工作流放 main，操作后推回本分支）。
-**⚠️ 定时调度当前刻意注释未启用**——等 Portainer stack 切换到本仓库后，到 main 分支把该文件里
+**⚠️ 定时调度当前刻意注释未启用**——等项目切换到本仓库后，到 main 分支把该文件里
 `schedule:` 两行的注释去掉即开启（每月 5 日 03:42 UTC / 北京 11:42）；`workflow_dispatch`
 手动同步随时可用，在 Actions 页面选 **Sync firecrawl compose** → Run workflow。
 旧 fork（xyonium/firecrawl）main 上的 `portainer-stack-sync.yml` 与本仓库无关，fork 删除后自然失效，无需处理。
@@ -101,14 +99,14 @@
 2. 与本分支的 override 合并（`docker compose config --no-interpolate`）
 3. **镜像 digest 钉版**：从 ghcr.io 解析 `firecrawl` / `playwright-service` / `nuq-postgres`
    三个镜像 `latest` 的当前 digest，写进生成文件（`...@sha256:...`）。
-   因为 CE 版 Portainer 没有 re-pull image,tag 不变的镜像永远不会自动更新；
-   钉 digest 后镜像更新变成 compose 文件的 diff,redeploy 时自然会拉新镜像。
+   钉 digest 后镜像更新变成 compose 文件的 diff：新 digest → 文件变化 → 平台重建拉新镜像，
+   digest 历史留在 git 里可回滚。
    redis / rabbitmq / foundationdb 是稳定第三方镜像，刻意保持浮动 tag 不钉。
 4. 校验合并结果（自解析 + 关键配置哨兵检查），通过且有变化才提交推送
 
 上游若做了与 override 不兼容的改动（比如删除/重命名某个 service），Action 会**失败并通知**，
-stack 保持旧版本不受影响——不会半夜悄悄挂掉。修好后在 Actions 页面手动 Re-run 即可。
+线上保持旧版本不受影响——不会半夜悄悄挂掉。修好后在 Actions 页面手动 Re-run 即可。
 
-回滚：分支上 revert 对应的 sync commit 再让 Portainer redeploy 即可（digest 历史都在 git 里）。
+回滚：分支上 revert 对应的 sync commit，平台侧重新部署即可（digest 历史都在 git 里）。
 
 注意：若仓库长期无活动，GitHub 可能自动暂停定时任务（会提前发邮件提醒），重新 enable 即可。
