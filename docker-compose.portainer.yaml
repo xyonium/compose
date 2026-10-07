@@ -1,0 +1,77 @@
+# 平台自定义层：与 docker-compose.upstream.yaml + docker-compose.upstream-proxy.yaml 合并使用
+# 合并产物 docker-compose.yaml 由 main 分支的 sync-netbird.yml 工作流生成
+#（bot 维护，勿手改）；要调整部署只改本文件。
+#
+# 自定义内容：
+#   1. 镜像全部走私服 mirror（jcr.savorcare.com 的 docker hub 代理）
+#   2. 密钥外置：config.yaml → netbird_config 命名卷（灌注见 README）；
+#      NB_PROXY_TOKEN → 平台项目 env（${NB_PROXY_TOKEN} 模板保留）
+#   3. dashboard env 内联（无密钥）+ 开启 Agent Network 区块（非 ONLY 模式）
+#   4. traefik docker1 风格固定证书（标签由上游 option 1 渲染自带 tls=true），
+#      这里只补 web 入口 http2https 跳转
+#   5. proxy 私有模式：无 traefik 路由（agent 流量走 WG 隧道直连），
+#      ACME 关闭，TLS 用 docker1 同步的泛域名证书（/wildcard-certs 挂载）
+
+name: netbird
+
+services:
+  dashboard:
+    image: jcr.savorcare.com/docker/netbirdio/dashboard:latest
+    env_file: !reset null
+    environment:
+      NETBIRD_MGMT_API_ENDPOINT: https://netbird.savorcare.com
+      NETBIRD_MGMT_GRPC_API_ENDPOINT: https://netbird.savorcare.com
+      AUTH_AUDIENCE: netbird-dashboard
+      AUTH_CLIENT_ID: netbird-dashboard
+      AUTH_CLIENT_SECRET: ""
+      AUTH_AUTHORITY: https://netbird.savorcare.com/oauth2
+      USE_AUTH0: "false"
+      AUTH_SUPPORTED_SCOPES: openid profile email groups
+      AUTH_REDIRECT_URI: /nb-auth
+      AUTH_SILENT_REDIRECT_URI: /nb-silent-auth
+      NGINX_SSL_PORT: "443"
+      LETSENCRYPT_DOMAIN: none
+      NETBIRD_AGENT_NETWORK_ENABLED: "true"
+    labels:
+      - "traefik.http.routers.netbird-http.rule=Host(`netbird.savorcare.com`)"
+      - "traefik.http.routers.netbird-http.entrypoints=web"
+      - "traefik.http.routers.netbird-http.middlewares=http2https"
+
+  netbird-server:
+    image: jcr.savorcare.com/docker/netbirdio/netbird-server:latest
+    # !override 整体替换上游 volumes：./config.yaml bind → netbird_config 命名卷
+    volumes: !override
+      - netbird_data:/var/lib/netbird
+      - netbird_config:/etc/netbird
+
+  proxy:
+    image: jcr.savorcare.com/docker/netbirdio/reverse-proxy:latest
+    env_file: !reset null
+    environment:
+      NB_PROXY_DEBUG_LOGS: "false"
+      NB_PROXY_MANAGEMENT_ADDRESS: http://netbird-server:80
+      NB_PROXY_ALLOW_INSECURE: "true"
+      NB_PROXY_DOMAIN: netbird.savorcare.com
+      NB_PROXY_ADDRESS: :8443
+      NB_PROXY_TOKEN: ${NB_PROXY_TOKEN}
+      NB_PROXY_CERTIFICATE_DIRECTORY: /certs
+      NB_PROXY_ACME_CERTIFICATES: "false"
+      NB_PROXY_FORWARDED_PROTO: https
+      NB_PROXY_PROXY_PROTOCOL: "false"
+      NB_PROXY_PRIVATE: "true"
+      # 固定 WG 端口配合宿主 UDP 映射（单账号部署适用）
+      NB_PROXY_WG_PORT: "51820"
+      # docker1 证书同步目录（含 *.netbird.savorcare.com），实际路径以 README 为准
+      NB_PROXY_WILDCARD_CERT_DIR: /wildcard-certs
+    # !override 整体替换上游 labels：私有模式不暴露任何 traefik 路由
+    labels: !override
+      - "traefik.enable=false"
+    # !override 重定向网络：与 server 同网，管理面内网直连
+    networks: !override
+      - reverse-proxy
+    volumes:
+      - netbird_proxy_certs:/certs
+      - /opt/traefik/certs:/wildcard-certs:ro
+
+volumes:
+  netbird_config:
