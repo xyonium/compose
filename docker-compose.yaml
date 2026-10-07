@@ -1,0 +1,97 @@
+name: authentik
+networks:
+  default:
+    name: authentik_default
+  reverse-proxy:
+    external: true
+    name: reverse-proxy
+services:
+  postgresql:
+    environment:
+      POSTGRES_DB: ${PG_DB:-authentik}
+      POSTGRES_PASSWORD: ${PG_PASS:?database password required}
+      POSTGRES_USER: ${PG_USER:-authentik}
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_period: 20s
+      test:
+        - CMD-SHELL
+        - pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}
+      timeout: 5s
+    image: jcr.savorcare.com/docker/library/postgres:16-alpine
+    networks:
+      default: null
+    restart: unless-stopped
+    volumes:
+      - source: database
+        target: /var/lib/postgresql/data
+        type: volume
+        volume: {}
+  server:
+    command: server
+    depends_on:
+      postgresql:
+        condition: service_healthy
+        required: true
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+    image: jcr.savorcare.com/ghcr/goauthentik/server@sha256:ab9b4e8cc4ab3f8d1198d2db6aeea66bafea1963b3f2843589e0d163f97d9849
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=reverse-proxy
+      - traefik.http.services.authentik.loadbalancer.server.port=9000
+      - traefik.http.routers.authentik.rule=Host(`auth.savorcare.com`)
+      - traefik.http.routers.authentik.entrypoints=websecure
+      - traefik.http.routers.authentik.tls=true
+      - traefik.http.routers.authentikhttp.rule=Host(`auth.savorcare.com`)
+      - traefik.http.routers.authentikhttp.entrypoints=web
+      - traefik.http.routers.authentikhttp.middlewares=http2https
+    networks:
+      default: null
+      reverse-proxy: null
+    restart: unless-stopped
+    shm_size: 512mb
+    volumes:
+      - source: data
+        target: /data
+        type: volume
+        volume: {}
+  worker:
+    command: worker
+    depends_on:
+      postgresql:
+        condition: service_healthy
+        required: true
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+    image: jcr.savorcare.com/ghcr/goauthentik/server@sha256:ab9b4e8cc4ab3f8d1198d2db6aeea66bafea1963b3f2843589e0d163f97d9849
+    networks:
+      default: null
+    restart: unless-stopped
+    shm_size: 512mb
+    user: root
+    volumes:
+      - bind:
+          create_host_path: true
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        type: bind
+      - source: data
+        target: /data
+        type: volume
+        volume: {}
+volumes:
+  data:
+    name: authentik_data
+  database:
+    driver: local
+    name: authentik_database

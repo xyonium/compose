@@ -1,0 +1,67 @@
+# 平台自定义层：与上游 docker-compose.upstream.yaml 合并使用
+# 合并产物 docker-compose.yaml 由 main 分支的 sync-authentik.yml 工作流生成
+#（bot 维护，勿手改）；要调整部署只改本文件。
+#
+# 自定义内容：
+#   1. 镜像全部走私服 mirror（jcr.savorcare.com 的 ghcr / docker hub 代理）
+#   2. server 摘掉宿主端口映射，改走 traefik（auth.savorcare.com，
+#      docker1 风格：固定证书文件，tls=true，无 certresolver）
+#   3. 顶层 name 固定项目名，数据卷名不随部署平台项目/stack 名变化
+#   4. 清掉上游的 env_file: .env——仓库里没有这个文件，变量一律由部署平台的
+#      项目 env（.env）注入；留着 config 会因找不到文件直接报错
+#   5. ./data 绑定挂载转命名卷 data（server/worker 共享）；去掉 custom-templates
+#      和 certs 挂载（自定义模板/证书需要时再改本文件加回）
+#   6. 主镜像写死版本 tag：authentik 是有状态服务，升级须先看上游 release notes，
+#      手改本文件两处 tag 来升级；bot 只负责对写死的 tag 钉 digest
+
+name: authentik
+
+services:
+  server:
+    image: jcr.savorcare.com/ghcr/goauthentik/server:2026.8.3
+    env_file: !reset null
+    # 不暴露宿主端口（清掉上游的 ${COMPOSE_PORT_HTTP/HTTPS} 映射），
+    # 外部访问走 traefik；容器 9000 经 reverse-proxy 网络可达
+    ports: !reset null
+    # !override 整体替换上游 volumes：./data 转命名卷；不再挂 ./custom-templates
+    volumes: !override
+      - data:/data
+    networks:
+      # 上游没写 networks（隐式 default），一旦这里显式列出就不会再自动补 default——
+      # 必须显式写上 default，否则 server 到不了 postgresql（同 technitium 的写法）
+      - default
+      - reverse-proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=reverse-proxy"
+      # 摘掉宿主端口后 traefik 无从猜测容器端口，显式钉死（authentik HTTP 口）
+      - "traefik.http.services.authentik.loadbalancer.server.port=9000"
+      - "traefik.http.routers.authentik.rule=Host(`auth.savorcare.com`)"
+      - "traefik.http.routers.authentik.entrypoints=websecure"
+      # docker1 用固定证书文件（websecure 入口已全局 tls），不写 certresolver
+      - "traefik.http.routers.authentik.tls=true"
+      - "traefik.http.routers.authentikhttp.rule=Host(`auth.savorcare.com`)"
+      - "traefik.http.routers.authentikhttp.entrypoints=web"
+      # http2https 中间件在 docker1 的 traefik 栈里已定义，直接引用
+      - "traefik.http.routers.authentikhttp.middlewares=http2https"
+
+  worker:
+    image: jcr.savorcare.com/ghcr/goauthentik/server:2026.8.3
+    env_file: !reset null
+    # !override 整体替换：保留 docker.sock（managed outpost 需要），
+    # ./data 转命名卷；不再挂 ./certs、./custom-templates
+    volumes: !override
+      - /var/run/docker.sock:/var/run/docker.sock
+      - data:/data
+
+  postgresql:
+    image: jcr.savorcare.com/docker/library/postgres:16-alpine
+    env_file: !reset null
+
+networks:
+  reverse-proxy:
+    name: reverse-proxy
+    external: true
+
+volumes:
+  data:
