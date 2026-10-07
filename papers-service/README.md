@@ -80,7 +80,7 @@ paper-search-mcp 退役后承接 `download_paper_to_knowledge` 的 OA 兜底链�
 
 镜像由 `../.github/workflows/papers-service-image.yml` 在 push 到本分支
 （paths: `papers-service/**`）时构建推 `ghcr.io/xyonium/firecrawl-papers-service`
-并把 digest 钉回两个 compose 文件。compose 服务块见 `../docker-compose.deploy.yaml`
+并把 digest 钉回两个 compose 文件。compose 服务块见 `../docker-compose.portainer.yaml`
 （`papers-service`，端口 3200，内部服务不过 traefik）。
 
 **升级 tool.py**：tool.py 在另一个仓库，其更新不触发本工作流——

@@ -1,7 +1,7 @@
-# 部署自定义层（deploy 分支）：唯一手改文件。deploy-sync bot 把它与
-# docker-compose.upstream.yaml 合并、钉 digest 后生成 docker-compose.yaml，
-# 部署平台（Arcane）只消费生成品。请勿手动合并两文件部署——本文件里 api/mcp
-# 等上游镜像不带 digest，会覆盖掉生成品里的钉版。
+# 部署自定义层（compose 仓库 firecrawl 分支）：唯一手改文件。main 上的
+# sync-firecrawl bot 把它与 docker-compose.upstream.yaml 合并、钉 digest
+# 后生成 docker-compose.yaml，部署平台（Arcane）只消费生成品。请勿手动
+# 合并两文件部署——本文件里 api/mcp 等上游镜像不带 digest，会覆盖掉生成品里的钉版。
 services:
   playwright-service:
     image: jcr.savorcare.com/ghcr/firecrawl/playwright-service:latest
