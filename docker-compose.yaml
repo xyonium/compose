@@ -35,11 +35,19 @@ services:
         condition: service_healthy
         required: true
     environment:
-      AUTHENTIK_POSTGRESQL__HOST: postgresql
-      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
-      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
-      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
-      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+      - AUTHENTIK_POSTGRESQL__HOST=postgresql
+      - AUTHENTIK_POSTGRESQL__NAME=${PG_DB:-authentik}
+      - AUTHENTIK_POSTGRESQL__PASSWORD=${PG_PASS}
+      - AUTHENTIK_POSTGRESQL__USER=${PG_USER:-authentik}
+      - AUTHENTIK_SECRET_KEY=${AUTHENTIK_SECRET_KEY:?secret key required}
+      - AUTHENTIK_EMAIL__FROM=${AUTHENTIK_EMAIL__FROM:-}
+      - AUTHENTIK_EMAIL__HOST=${AUTHENTIK_EMAIL__HOST:-}
+      - AUTHENTIK_EMAIL__PASSWORD=${AUTHENTIK_EMAIL__PASSWORD:-}
+      - AUTHENTIK_EMAIL__PORT=${AUTHENTIK_EMAIL__PORT:-25}
+      - AUTHENTIK_EMAIL__TIMEOUT=${AUTHENTIK_EMAIL__TIMEOUT:-10}
+      - AUTHENTIK_EMAIL__USERNAME=${AUTHENTIK_EMAIL__USERNAME:-}
+      - AUTHENTIK_EMAIL__USE_SSL=${AUTHENTIK_EMAIL__USE_SSL:-false}
+      - AUTHENTIK_EMAIL__USE_TLS=${AUTHENTIK_EMAIL__USE_TLS:-false}
     image: jcr.savorcare.com/ghcr/goauthentik/server@sha256:ab9b4e8cc4ab3f8d1198d2db6aeea66bafea1963b3f2843589e0d163f97d9849
     labels:
       - traefik.enable=true
@@ -68,11 +76,19 @@ services:
         condition: service_healthy
         required: true
     environment:
-      AUTHENTIK_POSTGRESQL__HOST: postgresql
-      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
-      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
-      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
-      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+      - AUTHENTIK_POSTGRESQL__HOST=postgresql
+      - AUTHENTIK_POSTGRESQL__NAME=${PG_DB:-authentik}
+      - AUTHENTIK_POSTGRESQL__PASSWORD=${PG_PASS}
+      - AUTHENTIK_POSTGRESQL__USER=${PG_USER:-authentik}
+      - AUTHENTIK_SECRET_KEY=${AUTHENTIK_SECRET_KEY:?secret key required}
+      - AUTHENTIK_EMAIL__FROM=${AUTHENTIK_EMAIL__FROM:-}
+      - AUTHENTIK_EMAIL__HOST=${AUTHENTIK_EMAIL__HOST:-}
+      - AUTHENTIK_EMAIL__PASSWORD=${AUTHENTIK_EMAIL__PASSWORD:-}
+      - AUTHENTIK_EMAIL__PORT=${AUTHENTIK_EMAIL__PORT:-25}
+      - AUTHENTIK_EMAIL__TIMEOUT=${AUTHENTIK_EMAIL__TIMEOUT:-10}
+      - AUTHENTIK_EMAIL__USERNAME=${AUTHENTIK_EMAIL__USERNAME:-}
+      - AUTHENTIK_EMAIL__USE_SSL=${AUTHENTIK_EMAIL__USE_SSL:-false}
+      - AUTHENTIK_EMAIL__USE_TLS=${AUTHENTIK_EMAIL__USE_TLS:-false}
     image: jcr.savorcare.com/ghcr/goauthentik/server@sha256:ab9b4e8cc4ab3f8d1198d2db6aeea66bafea1963b3f2843589e0d163f97d9849
     networks:
       default: null

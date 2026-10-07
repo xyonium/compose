@@ -13,6 +13,9 @@
 #      和 certs 挂载（自定义模板/证书需要时再改本文件加回）
 #   6. 主镜像写死版本 tag：authentik 是有状态服务，升级须先看上游 release notes，
 #      手改本文件两处 tag 来升级；bot 只负责对写死的 tag 钉 digest
+#   7. server/worker 增加 AUTHENTIK_EMAIL__* 透传：全局 SMTP 没有界面设置、只能
+#      env（官方口径），而清了 env_file 后平台 env 只做插值不进容器，必须显式
+#      透传；值仍由部署平台的项目 env 注入，不进 git
 
 name: authentik
 
@@ -20,6 +23,16 @@ services:
   server:
     image: jcr.savorcare.com/ghcr/goauthentik/server:2026.8.3
     env_file: !reset null
+    # 全局 SMTP 透传（见文件头第 7 条）；587 用 USE_TLS、465 用 USE_SSL，勿同开
+    environment:
+      AUTHENTIK_EMAIL__HOST: ${AUTHENTIK_EMAIL__HOST:-}
+      AUTHENTIK_EMAIL__PORT: ${AUTHENTIK_EMAIL__PORT:-25}
+      AUTHENTIK_EMAIL__USERNAME: ${AUTHENTIK_EMAIL__USERNAME:-}
+      AUTHENTIK_EMAIL__PASSWORD: ${AUTHENTIK_EMAIL__PASSWORD:-}
+      AUTHENTIK_EMAIL__USE_TLS: ${AUTHENTIK_EMAIL__USE_TLS:-false}
+      AUTHENTIK_EMAIL__USE_SSL: ${AUTHENTIK_EMAIL__USE_SSL:-false}
+      AUTHENTIK_EMAIL__TIMEOUT: ${AUTHENTIK_EMAIL__TIMEOUT:-10}
+      AUTHENTIK_EMAIL__FROM: ${AUTHENTIK_EMAIL__FROM:-}
     # 不暴露宿主端口（清掉上游的 ${COMPOSE_PORT_HTTP/HTTPS} 映射），
     # 外部访问走 traefik；容器 9000 经 reverse-proxy 网络可达
     ports: !reset null
@@ -48,6 +61,16 @@ services:
   worker:
     image: jcr.savorcare.com/ghcr/goauthentik/server:2026.8.3
     env_file: !reset null
+    # 与 server 相同的全局 SMTP 透传（实际发信多由 worker 执行）
+    environment:
+      AUTHENTIK_EMAIL__HOST: ${AUTHENTIK_EMAIL__HOST:-}
+      AUTHENTIK_EMAIL__PORT: ${AUTHENTIK_EMAIL__PORT:-25}
+      AUTHENTIK_EMAIL__USERNAME: ${AUTHENTIK_EMAIL__USERNAME:-}
+      AUTHENTIK_EMAIL__PASSWORD: ${AUTHENTIK_EMAIL__PASSWORD:-}
+      AUTHENTIK_EMAIL__USE_TLS: ${AUTHENTIK_EMAIL__USE_TLS:-false}
+      AUTHENTIK_EMAIL__USE_SSL: ${AUTHENTIK_EMAIL__USE_SSL:-false}
+      AUTHENTIK_EMAIL__TIMEOUT: ${AUTHENTIK_EMAIL__TIMEOUT:-10}
+      AUTHENTIK_EMAIL__FROM: ${AUTHENTIK_EMAIL__FROM:-}
     # !override 整体替换：保留 docker.sock（managed outpost 需要），
     # ./data 转命名卷；不再挂 ./certs、./custom-templates
     volumes: !override

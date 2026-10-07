@@ -7,7 +7,8 @@
 |---|---|---|
 | `docker-compose.yaml` | **预合并生成文件**：上游 compose + 平台自定义层合并后的最终结果，server/worker 主镜像已按 digest 钉版，部署平台直接使用它（`${VAR}` 变量保留，由平台的项目 env 注入） | **只由机器人生成**，手改会被覆盖 |
 | `docker-compose.upstream.yaml` | 上游官方安装文件 <https://goauthentik.io/docker-compose.yml> 的原样拷贝 | **只由机器人改** |
-| `docker-compose.portainer.yaml` | 我们的全部自定义（镜像 mirror、traefik、reverse-proxy 网络、卷、项目名固定） | **要调整部署只改这个文件** |
+| `docker-compose.portainer.yaml` | 我们的全部自定义（镜像 mirror、traefik、reverse-proxy 网络、卷、项目名固定、SMTP 透传） | **要调整部署只改这个文件** |
+| `.env.example` | 项目 env 参考模板（上游没有官方版，本分支手维——必填凭据 + 全局 SMTP 八变量） | 手改 |
 
 部署目标：**docker1**，经 traefik 反代到 `https://auth.savorcare.com`。
 
@@ -23,6 +24,9 @@
   （docker1 的 traefik 栈已定义）；容器端口显式钉 9000
 - 清掉三个服务的 `env_file: .env`：仓库里没有这个文件（上游 compose 面向手动部署），
   变量一律由部署平台的项目 env 注入；留着它 `docker compose config` 会因找不到文件报错
+- server/worker 增加 `AUTHENTIK_EMAIL__*` 八变量透传：**全局 SMTP 在界面上没有设置页、
+  只能 env 配**（官方口径），而清了 env_file 后平台 env 只做插值不进容器，必须显式透传；
+  值仍由平台项目 env 注入，不进 git
 - `./data` 绑定挂载转命名卷 `data`（server/worker 共享，实际卷名恒为 `authentik_data`）；
   `./custom-templates`、`./certs` 两个挂载去掉（自定义模板/证书需要时改 override 加回）；
   worker 的 `/var/run/docker.sock` 保留（上游默认，managed outpost 要用）
@@ -36,14 +40,15 @@
 
 ### 项目 env 必填项
 
-上游对两个变量有 `:?` 断言，不设 compose 直接拒绝启动。生成方式均为 `openssl rand -hex 32`：
+上游对两个变量有 `:?` 断言，不设 compose 直接拒绝启动。完整模板见本分支 `.env.example`
+（必填凭据 + 全局 SMTP 八变量，生成命令都在里面）：
 
 | 变量 | 说明 |
 |---|---|
-| `PG_PASS` | **必填**，postgresql 超级用户密码 |
-| `AUTHENTIK_SECRET_KEY` | **必填**，authentik 加密密钥（session/凭据加密），丢失 = 所有加密数据不可解，务必备份 |
+| `PG_PASS` | **必填**，postgresql 超级用户密码；`openssl rand -hex 32` 生成 |
+| `AUTHENTIK_SECRET_KEY` | **必填**，authentik 加密密钥（session/凭据加密），丢失 = 所有加密数据不可解，务必备份；`openssl rand -base64 60` 生成 |
 | `PG_DB` / `PG_USER` | 可选，默认都是 `authentik` |
-| `AUTHENTIK_EMAIL__HOST` 等 | 可选，SMTP 系列（找回密码邮件），全量变量见[上游文档](https://docs.goauthentik.io/docs/install-config/install/docker-compose) |
+| `AUTHENTIK_EMAIL__*` | 可选，全局 SMTP 八变量（找回密码/通知邮件；界面无设置页只能 env，已做透传）。587 用 `USE_TLS=true`、465 用 `USE_SSL=true`，勿同开；配好执行 `docker compose exec worker ak test_email <邮箱>` 验证 |
 
 ### 初始管理员
 
