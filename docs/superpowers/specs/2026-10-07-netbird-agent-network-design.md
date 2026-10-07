@@ -168,8 +168,10 @@ concurrency group `netbird-sync`。
 2. OPNSense：证书申请加 `*.netbird.savorcare.com`，同步到 docker1（路径写入 README）。
 3. docker1 预检：UDP 3478（STUN）、UDP 51820（proxy WG）未被占用。
 4. 生成真实 `config.yaml`：从分支模板复制，3 个占位符用 `openssl rand -base64 32`
-   生成（`encryptionKey` 保留 base64 尾 `=`），`reverseProxy.trustedPeers` 按 docker1
-   traefik 在 reverse-proxy 网络的源地址填（如 `172.x.0.0/16`），灌入 `netbird_config`
+   生成（`encryptionKey` 保留 base64 尾 `=`）；模板里 `trustedHTTPProxies` 的
+   `172.30.0.10/32` 是上游为内建 traefik 写的死值，替换为 docker1 traefik 在
+   reverse-proxy 网络的源地址段；`trustedPeers` 键模板不存在，需要时手工新增同值条目，
+   灌入 `netbird_config`
    卷（`docker run --rm -v netbird_netbird_config:/cfg -v $PWD:/src alpine sh -c
    "cp /src/config.yaml /cfg/"`）。
 5. Arcane 建项目，项目 env 必填仅一项：`NB_PROXY_TOKEN`（先填占位）。

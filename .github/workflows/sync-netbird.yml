@@ -93,6 +93,66 @@ jobs:
           ! grep -qE '"[A-Za-z0-9+/]{40,}=?"' config.yaml || {
             echo "::error::config.yaml 疑似残留未脱敏密钥"; exit 1; }
 
+      - name: Check env parity between rendered references and override
+        run: |
+          set -euo pipefail
+          # override 用 env_file: !reset null + 内联 environment 替代上游 env_file，
+          # 上游若在 dashboard.env/proxy.env 加/改/删变量，这里大声失败——而不是让
+          # "新镜像 + 旧内联 env"静默上线（bot commit 无人 review）。刻意差异走白名单。
+          python3 - <<'PYEOF'
+          import sys, yaml
+
+          def parse_env(path):
+              out = {}
+              for line in open(path):
+                  line = line.strip()
+                  if not line or line.startswith('#'):
+                      continue
+                  k, _, v = line.partition('=')
+                  out[k.strip()] = v.strip()
+              return out
+
+          override = yaml.load(open('docker-compose.portainer.yaml'), Loader=yaml.BaseLoader)
+          svc = override['services']
+          fails = []
+
+          # dashboard：渲染键必须全部内联且值相等；内联只允许多出 AGENT_NETWORK_ENABLED
+          rendered = parse_env('dashboard.env')
+          inline = dict(svc['dashboard'].get('environment') or {})
+          for k, v in rendered.items():
+              if k not in inline:
+                  fails.append(f'dashboard: rendered key {k} missing in override inline env')
+              elif inline[k] != v:
+                  fails.append(f'dashboard: {k} drift: rendered={v!r} inline={inline[k]!r}')
+          for k in set(inline) - set(rendered) - {'NETBIRD_AGENT_NETWORK_ENABLED'}:
+              fails.append(f'dashboard: unexpected extra inline key {k}')
+
+          # proxy：刻意差异白名单（值覆盖 / 刻意缺席 / 刻意新增）
+          rendered = parse_env('proxy.env')
+          inline = dict(svc['proxy'].get('environment') or {})
+          value_overrides = {'NB_PROXY_TOKEN', 'NB_PROXY_ACME_CERTIFICATES',
+                             'NB_PROXY_PROXY_PROTOCOL'}
+          absent_allowed = {'NB_PROXY_ACME_CHALLENGE_TYPE',  # ACME 关闭后无意义
+                            'NB_PROXY_TRUSTED_PROXIES'}      # pp-v2 关闭后无意义
+          extra_allowed = {'NB_PROXY_PRIVATE', 'NB_PROXY_WG_PORT',
+                           'NB_PROXY_WILDCARD_CERT_DIR'}
+          for k, v in rendered.items():
+              if k not in inline:
+                  if k not in absent_allowed:
+                      fails.append(f'proxy: rendered key {k} missing in override inline env')
+              elif inline[k] != v and k not in value_overrides:
+                  fails.append(f'proxy: {k} drift: rendered={v!r} inline={inline[k]!r}')
+          for k in set(inline) - set(rendered) - extra_allowed:
+              fails.append(f'proxy: unexpected extra inline key {k}')
+
+          if fails:
+              print('::error::env parity failed（上游 env 模板漂移，同步 override 并更新白名单）：')
+              for f in fails:
+                  print('::error::  ' + f)
+              sys.exit(1)
+          print('env parity OK')
+          PYEOF
+
       - name: Merge, pin image digests and validate
         run: |
           set -euo pipefail
