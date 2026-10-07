@@ -72,5 +72,7 @@ jobs:
             echo "digest unchanged"
           else
             git commit -m "ci: pin pdf-ocr digest ($(date -u +%F) ${GITHUB_SHA:0:7})"
+            # 与另两个镜像构建并发时可能撞 push：先 rebase 再推
+            git pull --rebase origin firecrawl
             git push origin firecrawl
           fi
