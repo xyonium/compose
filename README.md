@@ -10,6 +10,7 @@
 | [`firecrawl`](https://github.com/xyonium/compose/tree/firecrawl) | [firecrawl/firecrawl](https://github.com/firecrawl/firecrawl) | dockerno1 | https://firecrawl.savorcare.com | 含 research-proxy / papers-service / pdf-ocr 三个自研配套服务（源码随分支，镜像由分支内 workflow 构建钉版）。2026-09 自 xyonium/firecrawl 的 portainer-stack 分支迁入，历史完整 |
 | [`sub2api`](https://github.com/xyonium/compose/tree/sub2api) | [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api) | dockerno1 | https://sub2api.savorcare.com | API 网关（上游 compose 在 deploy/docker-compose.yml） |
 | [`authentik`](https://github.com/xyonium/compose/tree/authentik) | [goauthentik/authentik](https://github.com/goauthentik/authentik) | docker1 | https://auth.savorcare.com | IdP/SSO（上游 compose 为官方安装文件 goauthentik.io/docker-compose.yml；主镜像写死版本 tag，升级手改 override；traefik 用 docker1 固定证书风格，无 certresolver） |
+| [`netbird`](https://github.com/xyonium/compose/tree/netbird) | [netbirdio/netbird](https://github.com/netbirdio/netbird) | docker1 | https://netbird.savorcare.com | VPN + Agent Network（上游无静态 compose：Action source 官方 getting-started.sh 渲染生成，option 1 出 base、option 0 提取 proxy 片段为第二个 upstream 文件；traefik 固定证书风格，proxy 私有模式走 WG 隧道不经 traefik） |
 
 部署细节（项目 env 必填项、切换/回滚方法）都在各分支的 README。
 
@@ -22,6 +23,9 @@
 | `docker-compose.yaml` | 预合并产物，主镜像钉 digest，部署平台直接使用 | 只由机器人生成，手改会被覆盖 |
 
 个别分支另有同步的上游参考文件（如 sub2api 分支的 `.env.example`），同样只由机器人改。
+netbird 分支在此基础上多一个 `docker-compose.upstream-proxy.yaml`（官方脚本第二种模式
+渲染后提取的 proxy 片段，bot 维护；合并输入从两份变三份）和三个渲染参考件
+（`config.yaml` 密钥已脱敏 / `dashboard.env` / `proxy.env`）。
 
 为什么预合并成单文件：预合并后任何平台只需要一个 compose 文件即可部署，不依赖各平台对
 多文件合并 / additional paths 的支持差异，Arcane、手动 `docker compose` 都一样。

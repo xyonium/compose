@@ -84,6 +84,28 @@ firecrawl-mcp 的启动 patch 藏在 `node -e '...'` 单引号体里，改后必
 `POSTGRES_PASSWORD`（不设直接拒启动）、`JWT_SECRET`（不固定则重启后登录态全失效）、
 `TOTP_ENCRYPTION_KEY`（不固定则重启后所有 2FA 失效）。明细见该分支 README 凭据表。
 
+## netbird 分支
+
+NetBird 全功能（VPN 管理 + Agent Network Beta），docker1，`netbird.savorcare.com`。
+三文件模式的变体（四文件），上游同步机制与其他分支不同：
+
+- **上游无静态 compose**：`sync-netbird.yml` source 官方 `getting-started.sh`
+  （`sed` 去掉末尾 `init_environment` 入口）只调渲染函数生成文件——不起容器、不部署。
+  渲染两次：option 1（外部 traefik）出 `docker-compose.upstream.yaml`；
+  option 0+proxy 出完整栈，yq 提取 proxy 服务为 `docker-compose.upstream-proxy.yaml`。
+  proxy 定义因此始终跟踪上游，非手抄。
+- **密钥外置**：`config.yaml` 三个随机密钥洗成占位符入库（上游不支持 env 展开），
+  真实文件灌 `netbird_config` 命名卷；`NB_PROXY_TOKEN` 走项目 env（两阶段 bootstrap，
+  先部署再 `admin token create` 换真 token）。平台项目 env 仅 `NB_PROXY_TOKEN` 必填。
+- traefik 为 docker1 固定证书风格（渲染时 `NETBIRD_TRAEFIK_CERTRESOLVER=` 留空，
+  只出 `tls=true`）；override 只补 web 入口 `http2https` 跳转。
+- proxy 私有模式（`NB_PROXY_PRIVATE=true`）：**无任何 traefik 路由**，agent 流量走
+  WireGuard 隧道直连 proxy（身份=WG 源 IP 映射）；TLS 用 OPNSense 同步的
+  `*.netbird.savorcare.com` 泛域名证书 bind 进 `/wildcard-certs`（override 里
+  `/opt/traefik/certs` 是占位路径，以 docker1 实际同步落盘为准）。ACME/pp-v2 都关闭。
+- 反向哨兵是重点：合并产物不得出现 `./config.yaml` bind、内建 traefik、certresolver、
+  `HostSNI(*)`、pp-v2、env_file、`NETBIRD_AGENT_NETWORK_ONLY`。
+
 ## 参考档案
 
 - [docs/claude-memory/](docs/claude-memory/) — Claude Code 时期的 4 份项目 memory 原文
