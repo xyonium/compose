@@ -1,0 +1,172 @@
+name: Sync netbird compose
+
+# 让 `netbird` orphan 分支与上游官方安装脚本保持同步。
+# 上游没有静态 compose——本 workflow source getting-started.sh 的渲染函数（不起容器、不部署）：
+#   1. docker-compose.upstream.yaml       <- 脚本 option 1（外部 traefik）渲染原样产物
+#   2. docker-compose.upstream-proxy.yaml <- 脚本 option 0+proxy 渲染后 yq 提取的 proxy 片段
+#   3. config.yaml / dashboard.env / proxy.env <- 渲染参考件（密钥/token 洗成占位符）
+#   4. docker-compose.yaml                <- 三文件预合并产物，3 个 netbirdio 镜像钉 digest
+#                                            （bot 生成，部署平台直接用它）
+# 全部自定义只放 docker-compose.portainer.yaml——其余文件永远不要手改。
+# 定时任务只跑默认分支，所以本文件放 main，checkout/推送的目标是 netbird 分支。
+
+on:
+  # ⚠️ 定时刻意未启用：启用方法——取消下面两行注释。
+  # （与 sync-firecrawl / sync-sub2api / sync-authentik 各错开 15 分钟，避免并发推不同分支互相踩脚）
+  # schedule:
+  #   - cron: "27 4 5 * *" # 每月 5 日 04:27 UTC（北京 12:27）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: netbird-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out netbird branch
+        uses: actions/checkout@v4
+        with:
+          ref: netbird
+
+      - name: Render upstream artifacts from official installer script
+        run: |
+          set -euo pipefail
+          curl -fsSL https://github.com/netbirdio/netbird/releases/latest/download/getting-started.sh \
+            -o /tmp/nb-gs.sh
+          # 去掉末尾唯一入口 init_environment，source 后只调渲染函数——
+          # 不碰 docker daemon、不起容器、不等待就绪（域名指向生产机，等待循环会死等）
+          sed -i 's/^init_environment$//' /tmp/nb-gs.sh
+          ! grep -q "^init_environment$" /tmp/nb-gs.sh || {
+            echo "::error::entrypoint not stripped"; exit 1; }
+          # 上游若重构脚本结构（函数改名/流程变化），这里大声失败而不是产出坏文件
+          ( source /tmp/nb-gs.sh
+            for fn in initialize_default_values configure_domain configure_reverse_proxy \
+                      generate_configuration_files render_proxy_env; do
+              type "$fn" >/dev/null || { echo "::error::missing function $fn"; exit 1; }
+            done )
+
+          # 第一次渲染：option 1（现有 traefik）。CERTRESOLVER 留空 → 只生成 tls=true，
+          # 即 docker1 固定证书风格；trustedPeers 警告属预期（config.yaml 是参考模板，
+          # 真实值部署时按宿主填）
+          ( source /tmp/nb-gs.sh
+            export NETBIRD_DOMAIN=netbird.savorcare.com NETBIRD_NON_INTERACTIVE=true
+            export NETBIRD_REVERSE_PROXY_TYPE=1 NETBIRD_TRAEFIK_EXTERNAL_NETWORK=reverse-proxy
+            export NETBIRD_TRAEFIK_ENTRYPOINT=websecure NETBIRD_TRAEFIK_CERTRESOLVER=
+            initialize_default_values; configure_domain; configure_reverse_proxy
+            mkdir -p /tmp/nb-base && cd /tmp/nb-base && generate_configuration_files )
+          test "$(grep -c certresolver /tmp/nb-base/docker-compose.yml)" = 0
+          test "$(grep -cE '^  traefik:' /tmp/nb-base/docker-compose.yml)" = 0
+
+          # 第二次渲染：option 0 + proxy（LE email 必填，值只落在被丢弃的内建 traefik 里）
+          ( source /tmp/nb-gs.sh
+            export NETBIRD_DOMAIN=netbird.savorcare.com NETBIRD_NON_INTERACTIVE=true
+            export NETBIRD_REVERSE_PROXY_TYPE=0 NETBIRD_ENABLE_PROXY=true \
+                   NETBIRD_LETSENCRYPT_EMAIL=ops@savorcare.com
+            initialize_default_values; configure_domain; configure_reverse_proxy
+            mkdir -p /tmp/nb-full && cd /tmp/nb-full && generate_configuration_files
+            PROXY_TOKEN=__SET_ME__ render_proxy_env > proxy.env )
+          # 只提取 proxy 服务与其证书卷（网络由 override 重定向到 reverse-proxy，不提取）
+          yq eval '{"services": {"proxy": .services.proxy},
+                    "volumes": {"netbird_proxy_certs": .volumes.netbird_proxy_certs}}' \
+            /tmp/nb-full/docker-compose.yml > docker-compose.upstream-proxy.yaml
+          for needle in "netbirdio/reverse-proxy" "51820" "netbird_proxy_certs" "HostSNI"; do
+            grep -q "$needle" docker-compose.upstream-proxy.yaml || {
+              echo "::error::proxy fragment missing '$needle' — 上游改了 proxy 定义结构"; exit 1; }
+          done
+
+          cp /tmp/nb-base/docker-compose.yml docker-compose.upstream.yaml
+          cp /tmp/nb-base/dashboard.env dashboard.env
+          cp /tmp/nb-base/config.yaml config.yaml
+          cp /tmp/nb-full/proxy.env proxy.env
+          # config.yaml 密钥脱敏：3 个随机密钥 → 占位符（密钥不进 git，
+          # 真实文件部署时灌 netbird_config 命名卷，见分支 README）
+          sed -i -E 's/(authSecret: )"[^"]*"/\1"__GENERATE_AT_DEPLOY__"/;
+                     s/(sessionCookieEncryptionKey: )"[^"]*"/\1"__GENERATE_AT_DEPLOY__"/;
+                     s/(encryptionKey: )"[^"]*"/\1"__GENERATE_AT_DEPLOY__"/' config.yaml
+          test "$(grep -c __GENERATE_AT_DEPLOY__ config.yaml)" = 3
+          ! grep -qE '"[A-Za-z0-9+/]{40,}=?"' config.yaml || {
+            echo "::error::config.yaml 疑似残留未脱敏密钥"; exit 1; }
+
+      - name: Merge, pin image digests and validate
+        run: |
+          set -euo pipefail
+          # --no-interpolate 保留 ${NB_PROXY_TOKEN} 模板，由部署平台的项目 env 注入
+          docker compose -f docker-compose.upstream.yaml -f docker-compose.upstream-proxy.yaml \
+            -f docker-compose.portainer.yaml config --no-interpolate --quiet
+          docker compose -f docker-compose.upstream.yaml -f docker-compose.upstream-proxy.yaml \
+            -f docker-compose.portainer.yaml config --no-interpolate > docker-compose.merged.tmp.yaml
+
+          # 钉 3 个 netbirdio 主镜像 digest（latest 浮动 tag；runner 访问不了私服 mirror，
+          # 从 docker.io 解析后写回 mirror 镜像行，正则锚定行尾）
+          for repo in netbirdio/netbird-server netbirdio/dashboard netbirdio/reverse-proxy; do
+            digest=$(docker buildx imagetools inspect "${repo}:latest" --format '{{.Manifest.Digest}}')
+            [ -n "$digest" ] || { echo "::error::empty digest for $repo"; exit 1; }
+            image="jcr.savorcare.com/docker/${repo}"
+            sed -i -E "s#${image}(:[[:alnum:]_.-]+)?(@sha256:[[:xdigit:]]{64})?[[:space:]]*\$#${image}@${digest}#" \
+              docker-compose.merged.tmp.yaml
+            grep -q "${image}@${digest}" docker-compose.merged.tmp.yaml || {
+              echo "::error::pin failed for $image"; exit 1; }
+          done
+          test "$(grep -c '@sha256:' docker-compose.merged.tmp.yaml)" = 3
+
+          # 哨兵检查：上游若改了我们 override 依赖的东西，大声失败而不是部署坏配置。
+          #（只用短 token——生成文件会折叠长行）
+          for needle in \
+            "name: netbird" \
+            "netbird.savorcare.com" \
+            "container_name: netbird-server\$" \
+            "container_name: netbird-dashboard" \
+            "container_name: netbird-proxy" \
+            "jcr.savorcare.com/docker/netbirdio" \
+            "traefik.enable" \
+            "http2https" \
+            "reverse-proxy" \
+            "netbird_data" \
+            "netbird_config" \
+            "netbird_proxy_certs" \
+            'NB_PROXY_TOKEN: \${NB_PROXY_TOKEN}' \
+            "NETBIRD_AGENT_NETWORK_ENABLED" \
+            "NB_PROXY_PRIVATE" \
+            "3478" \
+            "51820"; do
+            grep -qE "$needle" docker-compose.merged.tmp.yaml || {
+              echo "::error::merged config missing '$needle' — upstream changed something our override relies on"
+              exit 1
+            }
+          done
+          # 反向断言：密钥 bind 挂载、内建 traefik、certresolver、SNI 通配、
+          # PROXY protocol、env_file、ONLY 模式都不得出现在合并产物里
+          for bad in \
+            "./config.yaml" \
+            "netbird-traefik" \
+            "certresolver" \
+            'HostSNI(`*`)' \
+            "pp-v2" \
+            "env_file" \
+            "NETBIRD_AGENT_NETWORK_ONLY"; do
+            grep -qF "$bad" docker-compose.merged.tmp.yaml && {
+              echo "::error::merged config unexpectedly contains '$bad'"
+              exit 1
+            }
+          done
+          mv docker-compose.merged.tmp.yaml docker-compose.yaml
+          # 最终文件必须能独立解析（${NB_PROXY_TOKEN} 给个哑值）
+          NB_PROXY_TOKEN=dummy docker compose -f docker-compose.yaml config --quiet
+          echo "merged file OK"
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docker-compose.upstream.yaml docker-compose.upstream-proxy.yaml \
+                  config.yaml dashboard.env proxy.env docker-compose.yaml
+          if git diff --cached --quiet; then
+            echo "Upstream unchanged, nothing to do."
+          else
+            git commit -m "sync: upstream compose + image digests ($(date -u +%F))"
+            git push origin netbird
+          fi
