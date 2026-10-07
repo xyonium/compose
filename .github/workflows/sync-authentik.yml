@@ -1,41 +1,38 @@
-name: Sync sub2api compose
+name: Sync authentik compose
 
-# 让 `sub2api` orphan 分支与上游 Wei-Shaw/sub2api 保持同步：
-#   1. docker-compose.upstream.yaml  <- 上游 deploy/docker-compose.yml 原样拷贝（bot 维护）
+# 让 `authentik` orphan 分支与上游官方安装文件保持同步：
+#   1. docker-compose.upstream.yaml  <- https://goauthentik.io/docker-compose.yml 原样拷贝（bot 维护）
 #   2. docker-compose.yaml           <- 与 docker-compose.portainer.yaml 的预合并产物，
-#                                       weishaw/sub2api 钉 digest（bot 生成，部署平台直接用它）
+#                                       goauthentik/server 钉 digest（bot 生成，部署平台直接用它）
 # 全部自定义只放 docker-compose.portainer.yaml——另两个文件永远不要手改。
-# 定时任务只跑默认分支，所以本文件放 main，checkout/推送的目标是 sub2api 分支。
+# 定时任务只跑默认分支，所以本文件放 main，checkout/推送的目标是 authentik 分支。
 
 on:
   # ⚠️ 定时刻意未启用：启用方法——取消下面两行注释。
-  # （与 sync-firecrawl 错开 15 分钟，避免并发推不同分支互相踩脚）
+  # （与 sync-firecrawl / sync-sub2api 各错开 15 分钟，避免并发推不同分支互相踩脚）
   # schedule:
-  #   - cron: "57 3 5 * *" # 每月 5 日 03:57 UTC（北京 11:57）
+  #   - cron: "12 4 5 * *" # 每月 5 日 04:12 UTC（北京 12:12）
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: sub2api-sync
+  group: authentik-sync
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out sub2api branch
+      - name: Check out authentik branch
         uses: actions/checkout@v4
         with:
-          ref: sub2api
+          ref: authentik
 
-      - name: Fetch latest upstream compose and env reference
+      - name: Fetch latest upstream compose
         run: |
-          curl -fsSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/docker-compose.yml \
+          curl -fsSL https://goauthentik.io/docker-compose.yml \
             -o docker-compose.upstream.yaml
-          # .env.example 也随同步原样更新，分支内即可查全部变量，不用翻上游
-          curl -fsSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/.env.example \
-            -o .env.example
 
       - name: Merge, pin image digest and validate
         run: |
@@ -46,48 +43,45 @@ jobs:
           docker compose -f docker-compose.upstream.yaml -f docker-compose.portainer.yaml \
             config --no-interpolate > docker-compose.merged.tmp.yaml
 
-          # 只钉主程序镜像（latest 浮动 tag）；postgres:18-alpine / redis:8-alpine
-          # 是带版本号的稳定第三方镜像，刻意浮动不钉。
-          # 正则锚定行尾，与 sync-firecrawl 同一理由。
-          image="jcr.savorcare.com/docker/weishaw/sub2api"
-          digest=$(docker buildx imagetools inspect "weishaw/sub2api:latest" --format '{{.Manifest.Digest}}')
+          # 只钉主程序镜像（server/worker 同一镜像）；postgres:16-alpine 是带版本号的
+          # 稳定第三方镜像，刻意浮动不钉。tag 写死在 override 里（升级手改），
+          # 这里从合并产物提取当前 tag，按 ghcr 原名解析 digest 后钉回 mirror 镜像。
+          image="jcr.savorcare.com/ghcr/goauthentik/server"
+          tag=$(grep -oE "${image}:[[:alnum:]_.-]+" docker-compose.merged.tmp.yaml | head -1 | cut -d: -f2)
+          digest=$(docker buildx imagetools inspect "ghcr.io/goauthentik/server:${tag}" --format '{{.Manifest.Digest}}')
           sed -i -E "s#${image}(:[[:alnum:]_.-]+)?(@sha256:[[:xdigit:]]{64})?[[:space:]]*\$#${image}@${digest}#" \
             docker-compose.merged.tmp.yaml
           grep -q "${image}@${digest}" docker-compose.merged.tmp.yaml
 
           # 哨兵检查：上游若改了我们 override 依赖的东西，大声失败而不是部署坏配置。
-          # container_name: sub2api 锚定行尾，防止被 sub2api-postgres/-redis 混过。
           #（只用短 token——生成文件会折叠长行）
           for needle in \
-            "container_name: sub2api\$" \
-            "sub2api.savorcare.com" \
+            "auth.savorcare.com" \
             "traefik.enable" \
             "reverse-proxy" \
             "jcr.savorcare.com" \
-            "PGDATA" \
-            "sub2api_data" \
-            "postgres_data" \
-            "redis_data" \
-            "sub2api-network" \
-            "name: sub2api"; do
+            "goauthentik/server" \
+            "AUTHENTIK_SECRET_KEY" \
+            "docker.sock" \
+            "name: authentik"; do
             grep -qE "$needle" docker-compose.merged.tmp.yaml || {
               echo "::error::merged config missing '$needle' — upstream changed something our override relies on"
               exit 1
             }
           done
           mv docker-compose.merged.tmp.yaml docker-compose.yaml
-          # 最终文件必须能独立解析（上游对 POSTGRES_PASSWORD 有 :? 断言，给个哑值）
-          POSTGRES_PASSWORD=dummy docker compose -f docker-compose.yaml config --quiet
+          # 最终文件必须能独立解析（上游对 PG_PASS / AUTHENTIK_SECRET_KEY 有 :? 断言，给哑值）
+          PG_PASS=dummy AUTHENTIK_SECRET_KEY=dummy docker compose -f docker-compose.yaml config --quiet
           echo "merged file OK"
 
       - name: Commit and push if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docker-compose.upstream.yaml .env.example docker-compose.yaml
+          git add docker-compose.upstream.yaml docker-compose.yaml
           if git diff --cached --quiet; then
             echo "Upstream unchanged, nothing to do."
           else
             git commit -m "sync: upstream compose + image digests ($(date -u +%F))"
-            git push origin sub2api
+            git push origin authentik
           fi
