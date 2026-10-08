@@ -36,9 +36,12 @@ NetBird 全功能自建（VPN 管理 + **Agent Network** Beta），目标主机 
 1. **DNS**：`netbird.savorcare.com` A 记录指向 docker1。
    （`*.netbird.savorcare.com` 公网泛解析当前不需要——agent network endpoint 只在
    overlay 内解析；仅当启用公网暴露回退方案时才需要，见末节。）
-2. **证书**：OPNSense 的证书申请加入 `*.netbird.savorcare.com`，同步脚本下发到
-   docker1。确认 docker1 上同步落盘目录（override 中 `/opt/traefik/certs` 为占位路径，
-   以实际为准，不对就改 `docker-compose.portainer.yaml` 里 proxy 的 bind 挂载）。
+2. **证书**：OPNSense 证书申请需包含 `*.netbird.savorcare.com`，同步到 docker1
+   `/opt/traefik/certs/savorcare.com/`（bind 进 proxy 的 `/wildcard-certs` 只读挂载）。
+   **proxy 容器以 UID/GID 1000 运行（非 root）**，同步工具须设置：公钥/私钥权限
+   `0440`、组 `1000`（owner 保持 root），否则容器读不到私钥。proxy 主证书即该目录的
+   `fullchain.pem` + `key.pem`（certwatch 热加载，续期免介入；override 环境变量
+   `NB_PROXY_CERTIFICATE_FILE/KEY_FILE` 钉死这两个文件名，同步工具改名要同步改）。
 3. **端口预检**（docker1）：UDP 3478（STUN）、UDP 51820（proxy WG）未被占用：
    `ss -lunp | grep -E '3478|51820'` 应为空。
 4. **生成真实 `config.yaml` 并灌入命名卷**：

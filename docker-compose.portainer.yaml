@@ -54,15 +54,17 @@ services:
       NB_PROXY_DOMAIN: netbird.savorcare.com
       NB_PROXY_ADDRESS: :8443
       NB_PROXY_TOKEN: ${NB_PROXY_TOKEN}
-      NB_PROXY_CERTIFICATE_DIRECTORY: /certs
       NB_PROXY_ACME_CERTIFICATES: "false"
       NB_PROXY_FORWARDED_PROTO: https
       NB_PROXY_PROXY_PROTOCOL: "false"
       NB_PROXY_PRIVATE: "true"
       # 固定 WG 端口配合宿主 UDP 映射（单账号部署适用）
       NB_PROXY_WG_PORT: "51820"
-      # docker1 证书同步目录（含 *.netbird.savorcare.com），实际路径以 README 为准
-      NB_PROXY_WILDCARD_CERT_DIR: /wildcard-certs
+      # 主证书直接用 docker1 同步的泛域名证书（含 *.netbird.savorcare.com），
+      # certwatch 盯文件热更新，续期无需介入；静态证书同时覆盖 endpoint SNI
+      NB_PROXY_CERTIFICATE_DIRECTORY: /wildcard-certs
+      NB_PROXY_CERTIFICATE_FILE: fullchain.pem
+      NB_PROXY_CERTIFICATE_KEY_FILE: key.pem
     # !override 整体替换上游 labels：私有模式不暴露任何 traefik 路由
     labels: !override
       - "traefik.enable=false"
@@ -71,7 +73,7 @@ services:
       - reverse-proxy
     volumes:
       - netbird_proxy_certs:/certs
-      - /opt/traefik/certs:/wildcard-certs:ro
+      - /opt/traefik/certs/savorcare.com:/wildcard-certs:ro
 
 volumes:
   netbird_config:

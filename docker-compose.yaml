@@ -93,7 +93,9 @@ services:
       NB_PROXY_ACME_CERTIFICATES: "false"
       NB_PROXY_ADDRESS: :8443
       NB_PROXY_ALLOW_INSECURE: "true"
-      NB_PROXY_CERTIFICATE_DIRECTORY: /certs
+      NB_PROXY_CERTIFICATE_DIRECTORY: /wildcard-certs
+      NB_PROXY_CERTIFICATE_FILE: fullchain.pem
+      NB_PROXY_CERTIFICATE_KEY_FILE: key.pem
       NB_PROXY_DEBUG_LOGS: "false"
       NB_PROXY_DOMAIN: netbird.savorcare.com
       NB_PROXY_FORWARDED_PROTO: https
@@ -102,7 +104,6 @@ services:
       NB_PROXY_PROXY_PROTOCOL: "false"
       NB_PROXY_TOKEN: ${NB_PROXY_TOKEN}
       NB_PROXY_WG_PORT: "51820"
-      NB_PROXY_WILDCARD_CERT_DIR: /wildcard-certs
     image: jcr.savorcare.com/docker/netbirdio/reverse-proxy@sha256:6d6655b3f13f837d80cc44878033866713932d3c5c1381ed869af9542b523bc5
     labels:
       - traefik.enable=false
@@ -127,7 +128,7 @@ services:
       - bind:
           create_host_path: true
         read_only: true
-        source: /opt/traefik/certs
+        source: /opt/traefik/certs/savorcare.com
         target: /wildcard-certs
         type: bind
 volumes:
