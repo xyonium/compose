@@ -44,16 +44,20 @@ NetBird 全功能自建（VPN 管理 + **Agent Network** Beta），目标主机 
 4. **生成真实 `config.yaml` 并灌入命名卷**：
 
    ```bash
-   # 在 docker1 上，分支里的 config.yaml 模板复制一份后：
-   #   - 3 个 __GENERATE_AT_DEPLOY__ 分别用 openssl rand -base64 32 生成
-   #     （store.encryptionKey 必须保留 base64 尾部的 = ）
-   #   - reverseProxy.trustedHTTPProxies：模板里的 172.30.0.10/32 是上游为
-   #     内建 traefik 写的死值（docker1 上不存在此地址），替换为 docker1 traefik
-   #     在 reverse-proxy 网络的源地址段（docker network inspect reverse-proxy
-   #     查，如 172.x.0.0/16）。不处理则功能可用，但管理面日志/审计把所有
-   #     客户端记成转发地址。
-   #   - 如需 gRPC 侧同样收敛 forwarded-header 信任，另起一行新增
-   #     trustedPeers: 键（模板没有该键，需手工添加）填同值地址段
+   # 在 docker1 上，分支里的 config.yaml 模板复制一份后执行。
+   # 注意分隔符必须用 |（base64 值可能含 /，用 / 做分隔符会导致 sed 静默失败）；
+   # 字段锚定替换，幂等：
+   sed -i "s|authSecret: \"[^\"]*\"|authSecret: \"$(openssl rand -base64 32 | tr -d '=')\"|" config.yaml
+   sed -i "s|sessionCookieEncryptionKey: \"[^\"]*\"|sessionCookieEncryptionKey: \"$(openssl rand -base64 32)\"|" config.yaml
+   sed -i "s|encryptionKey: \"[^\"]*\"|encryptionKey: \"$(openssl rand -base64 32)\"|" config.yaml
+   # reverseProxy.trustedHTTPProxies：模板里的 172.30.0.10/32 是上游为
+   # 内建 traefik 写的死值（docker1 上不存在此地址），替换为 docker1 traefik
+   # 在 reverse-proxy 网络的源地址段。不处理则功能可用，但管理面日志/审计
+   # 把所有客户端记成转发地址。
+   sed -i "s|172.30.0.10/32|$(docker network inspect reverse-proxy -f '{{(index .IPAM.Config 0).Subnet}}')|" config.yaml
+   # 如需 gRPC 侧同样收敛，另起一行新增 trustedPeers: 键（模板没有，手工添加）填同值段
+   grep -c GENERATE config.yaml   # 必须为 0 再继续（server 对占位符会 FATL：
+                                  # decode encryption key: illegal base64 data）
    docker volume create netbird_netbird_config
    docker run --rm -v netbird_netbird_config:/cfg -v "$PWD":/src alpine \
      sh -c "cp /src/config.yaml /cfg/config.yaml"
