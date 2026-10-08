@@ -112,6 +112,38 @@ NetBird 全功能自建（VPN 管理 + **Agent Network** Beta），目标主机 
 4. 需要保真实客户端 IP 时再上 PROXY protocol v2（宿主 traefik 加 file provider
    的 serversTransport 片段 + `NB_PROXY_PROXY_PROTOCOL=true`）。
 
+## proxy 工作机制（Agent Network 数据面）
+
+```mermaid
+flowchart LR
+    subgraph peers["Peers（WireGuard overlay）"]
+        A["Agent 设备<br/>Claude Code / Codex<br/>（不带任何 API key）"]
+        B["管理员浏览器"]
+    end
+
+    subgraph docker1["docker1 · compose 项目 netbird"]
+        P["<b>proxy 容器</b><br/>内嵌 userspace WG netstack :8443<br/>TLS 用同步泛域名证书（热加载）<br/><br/>① WG 源 IP → peer 身份+组<br/>② 解析模型/流式标记<br/>③ 路由+策略+配额+guardrail<br/>④ 剥离客户端认证头，注入 provider key<br/>⑤ 转发 → 响应计量 → 回写"]
+        S["<b>netbird-server</b><br/>management+signal+relay+STUN<br/>providers/policies/limits/usage"]
+        D["<b>dashboard</b>（管理 UI）"]
+        T["宿主 traefik :443<br/>（proxy 不经过它）"]
+    end
+
+    L["上游 LLM（公网）<br/>OpenAI / Anthropic / 网关<br/>key 只存服务端"]
+
+    A -- "WG 隧道内 HTTPS<br/>xxx.netbird.savorcare.com" --> P
+    P -- "注入 key 后转发" --> L
+    P <-. "身份/策略查询 + 用量回写<br/>内网 :80" .-> S
+    S -. "控制面下发" .-> P
+    B -- "443 管理" --> T
+    T --> D
+    T --> S
+```
+
+要点：**agent 流量全程在 WireGuard 隧道内，不经过 traefik 或任何公网入口**；
+身份来自 WG peer 映射（隧道即凭证），endpoint 仅 overlay 内可达；
+provider key 只存服务端，客户端永远拿不到（keyless）。
+draw.io 可编辑源文件：[docs/proxy-architecture.drawio](docs/proxy-architecture.drawio)。
+
 ## 回滚
 
 - sync 引入上游不兼容变更：workflow 哨兵会失败且不提交，线上不动。

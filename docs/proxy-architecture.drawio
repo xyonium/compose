@@ -1,0 +1,73 @@
+<mxfile host="app.diagrams.net" agent="netbird-compose" version="24.0.0">
+  <diagram name="netbird-proxy-architecture" id="nb-proxy-arch">
+    <mxGraphModel dx="1000" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1160" pageHeight="720" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ===== Peers (left) ===== -->
+        <mxCell id="peer-agent" value="&lt;b&gt;Agent 设备&lt;/b&gt;&lt;br/&gt;Claude Code / Codex / 自研 agent&lt;br/&gt;（NetBird Client = WG peer）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=middle;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="40" y="140" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="peer-admin" value="&lt;b&gt;管理员设备&lt;/b&gt;&lt;br/&gt;浏览器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=middle;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="40" y="400" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== docker1 zone ===== -->
+        <mxCell id="docker1" value="docker1（compose 项目 netbird）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;fontSize=12;fontColor=#666666" vertex="1" parent="1">
+          <mxGeometry x="320" y="60" width="500" height="560" as="geometry" />
+        </mxCell>
+
+        <!-- proxy container with middleware chain -->
+        <mxCell id="proxy" value="&lt;b&gt;proxy 容器&lt;/b&gt;（netbirdio/reverse-proxy）&lt;br/&gt;内嵌 userspace WireGuard netstack，监听 :8443&lt;br/&gt;主证书 = docker1 同步泛域名证书（/wildcard-certs, 热加载）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="360" y="100" width="420" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="mw" value="&lt;b&gt;请求流水线（middleware chain）&lt;/b&gt;&lt;br/&gt;① 身份：WG 源 IP → peer 身份 + 组（查询 management）&lt;br/&gt;② 解析：模型 / 流式标记（llm_request_parser）&lt;br/&gt;③ 路由+策略：provider 匹配、组授权、配额/预算/guardrail&lt;br/&gt;④ 剥离客户端认证头，&lt;b&gt;服务端注入 provider API key&lt;/b&gt;&lt;br/&gt;⑤ 转发上游 → 响应计量（tokens/费用）→ 回写 management" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;verticalAlign=middle;align=left;spacingLeft=8;fontSize=11" vertex="1" parent="1">
+          <mxGeometry x="380" y="150" width="380" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- netbird-server -->
+        <mxCell id="server" value="&lt;b&gt;netbird-server 容器&lt;/b&gt;（management + signal + relay + STUN 一体）&lt;br/&gt;控制面：providers / policies / limits / usage 记录&lt;br/&gt;sqlite @ netbird_data 卷" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;verticalAlign=middle;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="360" y="300" width="420" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- dashboard -->
+        <mxCell id="dashboard" value="&lt;b&gt;dashboard 容器&lt;/b&gt;（管理 UI，仅供管理员）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=middle;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="360" y="420" width="420" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- traefik -->
+        <mxCell id="traefik" value="docker1 宿主 traefik（443 固定证书）&lt;br/&gt;只路由 dashboard + netbird-server；&lt;b&gt;proxy 不经 traefik&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=middle;fontSize=11" vertex="1" parent="1">
+          <mxGeometry x="360" y="510" width="420" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Upstreams (right) ===== -->
+        <mxCell id="llm" value="&lt;b&gt;上游 LLM（公网）&lt;/b&gt;&lt;br/&gt;OpenAI / Anthropic / AI 网关&lt;br/&gt;（provider key 只存在服务端）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;verticalAlign=middle;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="900" y="140" width="220" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Edges ===== -->
+        <mxCell id="e1" value="WG 隧道内 HTTPS&lt;br/&gt;endpoint = &lt;i&gt;xxx.netbird.savorcare.com&lt;/i&gt;&lt;br/&gt;客户端不带任何 API key" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="peer-agent" target="proxy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="注入 key 后转发（公网 egress）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#b85450;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="proxy" target="llm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="内网 :80（reverse-proxy 网络）&lt;br/&gt;身份/策略查询 + 用量回写&lt;br/&gt;NB_PROXY_TOKEN 认证" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#d79b00;dashed=1;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="proxy" target="server">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="443 管理 UI" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="peer-admin" target="traefik">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="控制面下发（providers/policies）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#d79b00;dashed=1;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="server" target="proxy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- notes -->
+        <mxCell id="note1" value="要点：agent 流量全程 WireGuard 隧道，不经过任何反向代理；&lt;br/&gt;身份 = WG peer 映射（隧道即凭证），公网无法到达 endpoint。" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontColor=#666666" vertex="1" parent="1">
+          <mxGeometry x="360" y="640" width="500" height="40" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
