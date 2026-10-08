@@ -50,7 +50,7 @@ services:
     labels:
       - traefik.enable=true
       - traefik.http.routers.netbird-grpc.rule=Host(`netbird.savorcare.com`) && (PathPrefix(`/signalexchange.SignalExchange/`)
-        || PathPrefix(`/management.ManagementService/`))
+        || PathPrefix(`/management.ManagementService/`) || PathPrefix(`/management.ProxyService/`))
       - traefik.http.routers.netbird-grpc.entrypoints=websecure
       - traefik.http.routers.netbird-grpc.tls=true
       - traefik.http.routers.netbird-grpc.service=netbird-server-h2c

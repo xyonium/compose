@@ -45,6 +45,11 @@ services:
     volumes: !override
       - netbird_data:/var/lib/netbird
       - netbird_config:/etc/netbird
+    labels:
+      # 补上 option-1 渲染漏掉的 ProxyService 路径（同 key label 覆盖上游 rule——
+      # 实测 compose 按 key 替换）。仅远程 proxy（跨主机注册）需要，同栈内网直连用不到，
+      # 先补齐防忘。上游若改 rule 其余部分，此处需跟随（哨兵有 ProxyService 针）。
+      - "traefik.http.routers.netbird-grpc.rule=Host(`netbird.savorcare.com`) && (PathPrefix(`/signalexchange.SignalExchange/`) || PathPrefix(`/management.ManagementService/`) || PathPrefix(`/management.ProxyService/`))"
 
   # 外部 relay + STUN（官方 scaling 指南形态）：经 OPNSense 端口映射走公司静态 IP，
   # 不占 443/80；TLS 用 docker1 同步泛域名证书（注意：证书只在启动时读一次，续期后要重启）

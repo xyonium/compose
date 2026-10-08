@@ -185,6 +185,9 @@ draw.io 可编辑源文件：[docs/public-access-architecture.drawio](docs/publi
 - proxy 私有模式：`NB_PROXY_PRIVATE=true`、无 traefik 路由（`traefik.enable=false`）、
   ACME 关闭、PROXY protocol 关闭——agent 流量走 WireGuard 隧道直连 proxy，
   不经过 docker1 的 traefik。
+- server 的 gRPC 路由补上了 `/management.ProxyService/` 前缀（上游 option-1 渲染漏了它；
+  同 key label 覆盖实现）。当前同栈 proxy 用不到，将来加远程 proxy（跨主机注册）时
+  无需再动路由。
 
 ## 回退方案：proxy 公网暴露（默认不启用）
 
