@@ -94,10 +94,6 @@ NetBird 全功能自建（VPN 管理 + **Agent Network** Beta），目标主机 
 公司宽带静态 IP 但 ISP 封 80/443 入站。**核心结论：只有控制面（TCP 443）需要经
 VPS/frp 隧道中转；STUN、relay 数据面、WireGuard P2P 全部直连公司静态 IP，不碰 VPS。**
 
-![proxy 工作机制（Agent Network 数据面）](docs/proxy-architecture.svg)
-
-<details><summary>Mermaid 源（可直接编辑）</summary>
-
 ```mermaid
 flowchart TB
     subgraph ext["外部（公网）"]
@@ -133,8 +129,6 @@ flowchart TB
     PEER <-. "agent network：WG 隧道" .-> P
     P --> LLM
 ```
-
-</details>
 
 ### 组件职责与暴露面
 
@@ -206,10 +200,6 @@ draw.io 可编辑源文件：[docs/public-access-architecture.drawio](docs/publi
 
 ## proxy 工作机制（Agent Network 数据面）
 
-![公网接入架构](docs/public-access-architecture.svg)
-
-<details><summary>Mermaid 源（可直接编辑）</summary>
-
 ```mermaid
 flowchart LR
     subgraph peers["Peers（WireGuard overlay）"]
@@ -234,8 +224,6 @@ flowchart LR
     T --> D
     T --> S
 ```
-
-</details>
 
 要点：**agent 流量全程在 WireGuard 隧道内，不经过 traefik 或任何公网入口**；
 身份来自 WG peer 映射（隧道即凭证），endpoint 仅 overlay 内可达；
