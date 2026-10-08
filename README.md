@@ -47,8 +47,9 @@ NetBird 全功能自建（VPN 管理 + **Agent Network** Beta），目标主机 
    `NB_PROXY_CERTIFICATE_FILE/KEY_FILE` 钉死这两个文件名，同步工具改名要同步改）。
    ⚠️ relay 容器（同样挂这个目录）与 proxy 不同：**证书只在启动时读一次，
    每次续期后要 `docker restart netbird-relay`**。
-3. **端口预检**（docker1）：UDP 3478（STUN）、UDP 51820（proxy WG）、TCP/UDP 9443（relay）
-   未被占用：`ss -lunp | grep -E '3478|51820|9443'` 应为空。
+3. **端口预检**（docker1）：UDP 3479（STUN）、UDP 51821（proxy WG）、TCP/UDP 9443（relay）
+   未被占用：`ss -lunp | grep -E '3479|51821|9443'` 应为空。
+   （3478/51820 刻意避开：OPNSense 的 TURN 插件占了 3478，自带 NetBird 客户端占了 51820。）
 4. **生成真实 `config.yaml` 并灌入命名卷**（用分支自带脚本，纯标准库、带断言，
    杜绝手改 YAML/sed 的坑）：
 
@@ -93,6 +94,10 @@ NetBird 全功能自建（VPN 管理 + **Agent Network** Beta），目标主机 
 公司宽带静态 IP 但 ISP 封 80/443 入站。**核心结论：只有控制面（TCP 443）需要经
 VPS/frp 隧道中转；STUN、relay 数据面、WireGuard P2P 全部直连公司静态 IP，不碰 VPS。**
 
+![proxy 工作机制（Agent Network 数据面）](docs/proxy-architecture.svg)
+
+<details><summary>Mermaid 源（可直接编辑）</summary>
+
 ```mermaid
 flowchart TB
     subgraph ext["外部（公网）"]
@@ -101,7 +106,7 @@ flowchart TB
     end
 
     subgraph edge["公司边界 · OPNSense（静态 IP，443/80 被封）"]
-        NAT["端口映射<br/>9443 tcp/udp → docker1 relay<br/>3478/udp → docker1 relay<br/>51820/udp → docker1 proxy（可选）"]
+        NAT["端口映射<br/>9443 tcp/udp → docker1 relay<br/>3479/udp → docker1 relay<br/>51821/udp → docker1 proxy（可选）"]
         OPN["OPNSense NetBird 客户端<br/>= routing peer，发布 VLAN 网段"]
     end
 
@@ -109,8 +114,8 @@ flowchart TB
         T["traefik :443<br/>（固定证书）"]
         S["netbird-server<br/>mgmt/signal/oauth2/api"]
         D["dashboard"]
-        R["relay 容器<br/>:9443(WS+QUIC) :3478(STUN)"]
-        P["proxy 容器 :51820<br/>（agent network，WG 内）"]
+        R["relay 容器<br/>:9443(WS+QUIC) :3479(STUN)"]
+        P["proxy 容器 :51821<br/>（agent network，WG 内）"]
     end
 
     VLAN["公司各 VLAN 资源"]
@@ -120,7 +125,7 @@ flowchart TB
     VPS == "frp 隧道（frpc 在 docker1 主动拨出）" ==> T
     T --> S
     T --> D
-    PEER -- "② STUN UDP 3478（打洞）" --> NAT
+    PEER -- "② STUN UDP 3479（打洞）" --> NAT
     PEER -- "③ relay 兜底 9443 tcp/udp<br/>（仅 P2P 失败时）" --> NAT
     NAT --> R
     PEER <-. "④ WireGuard P2P 直连<br/>（打洞成功后数据面）" .-> OPN
@@ -129,14 +134,16 @@ flowchart TB
     P --> LLM
 ```
 
+</details>
+
 ### 组件职责与暴露面
 
 | 组件 | 谁需要可达 | 路径 | 端口 |
 |---|---|---|---|
 | netbird-server（mgmt/signal/oauth2/api） | 所有 peer | VPS frp 透传 → docker1 traefik | TCP 443 |
 | dashboard | 仅管理员 | 同上（管理 UI 随 443 可达，官方形态如此） | TCP 443 |
-| relay + STUN | 所有 peer（打洞/兜底） | OPNSense 映射 → docker1 relay 容器 | TCP+UDP 9443、UDP 3478 |
-| proxy（agent network） | 仅 overlay 内 peer | 不公网暴露 | UDP 51820（可选映射，改善打洞） |
+| relay + STUN | 所有 peer（打洞/兜底） | OPNSense 映射 → docker1 relay 容器 | TCP+UDP 9443、UDP 3479 |
+| proxy（agent network） | 仅 overlay 内 peer | 不公网暴露 | UDP 51821（可选映射，改善打洞；51820 被 OPNSense 自带客户端占用） |
 | WireGuard P2P | peer ↔ peer | 直连（打洞） | UDP 51820 等 |
 
 ### VPS/frp 要点
@@ -146,7 +153,7 @@ flowchart TB
   traefik 终结，证书/SNI 无感。frps 的 443 被 netbird 独占；要同端口复用其他服务
   （auth/firecrawl 等），在 VPS 上改用 nginx stream `ssl_preread` 按 SNI 分流。
 - frpc 跑在 docker1（或任一内网主机），主动出站连接 frps——公司侧零入站端口。
-- UDP 3478/9443 **不要**走 frp（延迟敏感且 frp UDP 支持有限），走 OPNSense 直连。
+- UDP 3479/9443 **不要**走 frp（延迟敏感且 frp UDP 支持有限），走 OPNSense 直连。
 
 ### 切换步骤（已在跑的部署加 relay）
 
@@ -154,12 +161,12 @@ flowchart TB
 
 1. 先部署新版 compose（relay 容器起来，`docker logs netbird-relay` 看到
    WS/QUIC/STUN 三行监听）。
-2. OPNSense 配好 9443 tcp/udp + 3478/udp 映射，确认公网可连：
+2. OPNSense 配好 9443 tcp/udp + 3479/udp 映射，确认公网可连：
    `curl -v https://relay.netbird.savorcare.com:9443/` 应 TLS 握手成功（404 正常）。
 3. 最后改 config.yaml 卷里的 stuns/relays（bootstrap 脚本已含）→
    `docker restart netbird-server`。**此重启即切断内嵌 relay**，peer 直连外置 relay。
 4. peer 上验证：`netbird status -d` 应显示
-   `[stun:relay.netbird.savorcare.com:3478] is Available` 和
+   `[stun:relay.netbird.savorcare.com:3479] is Available` 和
    `[rels://relay.netbird.savorcare.com:9443] is Available via ws/quic`。
    强制中继测试：`sudo netbird service reconfigure --service-env NB_FORCE_RELAY=true`。
 
@@ -168,7 +175,7 @@ flowchart TB
 OPNSense 上的 NetBird 客户端配成 **Networks 的 routing peer**：Dashboard →
 Networks → 发布各 VLAN 网段（如 192.168.10.0/24），配 ACL 按组授权——
 "外部 VPN 访问 + 内部跨 VLAN 授权"都由 NetBird 策略统一管控。OPNSense 静态 IP +
-UDP 51820 可映射，外部 peer 与它之间 P2P 直连成功率高。
+UDP 51821 映射到 proxy，外部 peer 与它之间 P2P 直连成功率高。
 
 draw.io 可编辑源文件：[docs/public-access-architecture.drawio](docs/public-access-architecture.drawio)
 （在 draw.savorcare.com 里 File → Open from URL 贴 raw 地址即可打开）。
@@ -199,6 +206,10 @@ draw.io 可编辑源文件：[docs/public-access-architecture.drawio](docs/publi
 
 ## proxy 工作机制（Agent Network 数据面）
 
+![公网接入架构](docs/public-access-architecture.svg)
+
+<details><summary>Mermaid 源（可直接编辑）</summary>
+
 ```mermaid
 flowchart LR
     subgraph peers["Peers（WireGuard overlay）"]
@@ -223,6 +234,8 @@ flowchart LR
     T --> D
     T --> S
 ```
+
+</details>
 
 要点：**agent 流量全程在 WireGuard 隧道内，不经过 traefik 或任何公网入口**；
 身份来自 WG peer 映射（隧道即凭证），endpoint 仅 overlay 内可达；

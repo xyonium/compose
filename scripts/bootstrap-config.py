@@ -20,7 +20,7 @@ import re
 import secrets
 import sys
 
-STUN_URI = "stun:relay.netbird.savorcare.com:3478"
+STUN_URI = "stun:relay.netbird.savorcare.com:3479"  # 3478 被 OPNSense TURN 插件占用
 RELAY_ADDR = "rels://relay.netbird.savorcare.com:9443"
 
 

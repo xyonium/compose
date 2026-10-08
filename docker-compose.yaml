@@ -100,7 +100,7 @@ services:
       NB_PROXY_PRIVATE: "true"
       NB_PROXY_PROXY_PROTOCOL: "false"
       NB_PROXY_TOKEN: ${NB_PROXY_TOKEN}
-      NB_PROXY_WG_PORT: "51820"
+      NB_PROXY_WG_PORT: "51821"
     image: jcr.savorcare.com/docker/netbirdio/reverse-proxy@sha256:6d6655b3f13f837d80cc44878033866713932d3c5c1381ed869af9542b523bc5
     labels:
       - traefik.enable=false
@@ -114,8 +114,8 @@ services:
     ports:
       - mode: ingress
         protocol: udp
-        published: "51820"
-        target: 51820
+        published: "51821"
+        target: 51821
     restart: unless-stopped
     volumes:
       - source: netbird_proxy_certs
@@ -136,7 +136,7 @@ services:
       NB_EXPOSED_ADDRESS: rels://relay.netbird.savorcare.com:9443
       NB_LISTEN_ADDRESS: :9443
       NB_LOG_LEVEL: info
-      NB_STUN_PORTS: "3478"
+      NB_STUN_PORTS: "3479"
       NB_TLS_CERT_FILE: /certs/fullchain.pem
       NB_TLS_KEY_FILE: /certs/key.pem
     image: jcr.savorcare.com/docker/netbirdio/relay@sha256:1aff236dc73fde48857d6619816f442daa1035758f4d38a208c7b46752836484
@@ -153,8 +153,8 @@ services:
         target: 9443
       - mode: ingress
         protocol: udp
-        published: "3478"
-        target: 3478
+        published: "3479"
+        target: 3479
     restart: unless-stopped
     volumes:
       - bind:

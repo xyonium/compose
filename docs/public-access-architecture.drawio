@@ -20,7 +20,7 @@
         <mxCell id="edge" value="公司边界 · OPNSense（静态 IP，ISP 封 443/80 入站）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#d6b656;dashed=1;verticalAlign=top;fontSize=12;fontColor=#7a6a30" vertex="1" parent="1">
           <mxGeometry x="280" y="150" width="620" height="120" as="geometry" />
         </mxCell>
-        <mxCell id="nat" value="&lt;b&gt;端口映射&lt;/b&gt;（非 web 端口可用）&lt;br/&gt;9443 tcp/udp → relay&lt;br/&gt;3478/udp → relay（STUN）&lt;br/&gt;51820/udp → proxy（可选）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
+        <mxCell id="nat" value="&lt;b&gt;端口映射&lt;/b&gt;（非 web 端口可用）&lt;br/&gt;9443 tcp/udp → relay&lt;br/&gt;3479/udp → relay（STUN）&lt;br/&gt;51821/udp → proxy（可选）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
           <mxGeometry x="300" y="180" width="210" height="80" as="geometry" />
         </mxCell>
         <mxCell id="opn" value="&lt;b&gt;OPNSense NetBird 客户端&lt;/b&gt;&lt;br/&gt;routing peer：发布 VLAN 网段&lt;br/&gt;ACL 管控跨 VLAN 授权" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
@@ -40,10 +40,10 @@
         <mxCell id="dashboard" value="&lt;b&gt;dashboard&lt;/b&gt;（管理 UI）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
           <mxGeometry x="310" y="480" width="240" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="relay" value="&lt;b&gt;relay 容器&lt;/b&gt;（netbirdio/relay）&lt;br/&gt;:9443 WebSocket+QUIC · :3478 STUN&lt;br/&gt;证书 = 同步泛域名（启动读一次，续期后重启）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
+        <mxCell id="relay" value="&lt;b&gt;relay 容器&lt;/b&gt;（netbirdio/relay）&lt;br/&gt;:9443 WebSocket+QUIC · :3479 STUN&lt;br/&gt;证书 = 同步泛域名（启动读一次，续期后重启）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
           <mxGeometry x="610" y="400" width="270" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="proxy" value="&lt;b&gt;proxy 容器&lt;/b&gt;（agent network）&lt;br/&gt;WG peer，:51820/udp&lt;br/&gt;不公网暴露" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
+        <mxCell id="proxy" value="&lt;b&gt;proxy 容器&lt;/b&gt;（agent network）&lt;br/&gt;WG peer，:51821/udp&lt;br/&gt;不公网暴露" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
           <mxGeometry x="610" y="490" width="270" height="60" as="geometry" />
         </mxCell>
 

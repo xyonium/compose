@@ -55,7 +55,7 @@ services:
     ports:
       - '9443:9443/tcp'   # relay WebSocket（OPNSense 映射 9443/tcp → docker1）
       - '9443:9443/udp'   # relay QUIC（同端口 UDP，Docker 不会自动带，必须显式）
-      - '3478:3478/udp'   # 内嵌 STUN
+      - '3479:3479/udp'   # 内嵌 STUN（3478 被 OPNSense 的 TURN 插件占用，故用 3479）
     environment:
       NB_LOG_LEVEL: info
       NB_LISTEN_ADDRESS: :9443
@@ -65,7 +65,7 @@ services:
       NB_TLS_CERT_FILE: /certs/fullchain.pem
       NB_TLS_KEY_FILE: /certs/key.pem
       NB_ENABLE_STUN: "true"
-      NB_STUN_PORTS: "3478"
+      NB_STUN_PORTS: "3479"
     volumes:
       - /opt/traefik/certs/savorcare.com:/certs:ro
       - relay_data:/data
@@ -84,13 +84,17 @@ services:
       NB_PROXY_FORWARDED_PROTO: https
       NB_PROXY_PROXY_PROTOCOL: "false"
       NB_PROXY_PRIVATE: "true"
-      # 固定 WG 端口配合宿主 UDP 映射（单账号部署适用）
-      NB_PROXY_WG_PORT: "51820"
+      # 固定 WG 端口配合宿主 UDP 映射（单账号部署适用）；
+      # 51820 被 OPNSense 自带 netbird 客户端占用，故用 51821（映射 51821/udp → docker1）
+      NB_PROXY_WG_PORT: "51821"
       # 主证书直接用 docker1 同步的泛域名证书（含 *.netbird.savorcare.com），
       # certwatch 盯文件热更新，续期无需介入；静态证书同时覆盖 endpoint SNI
       NB_PROXY_CERTIFICATE_DIRECTORY: /wildcard-certs
       NB_PROXY_CERTIFICATE_FILE: fullchain.pem
       NB_PROXY_CERTIFICATE_KEY_FILE: key.pem
+    # !override 替换上游端口映射：WG 端口 51821（与上面 env 一致；51820 留给 OPNSense 客户端）
+    ports: !override
+      - '51821:51821/udp'
     # !override 整体替换上游 labels：私有模式不暴露任何 traefik 路由
     labels: !override
       - "traefik.enable=false"
