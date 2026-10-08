@@ -199,9 +199,9 @@ jobs:
             "NB_TLS_CERT_FILE" \
             "NETBIRD_AGENT_NETWORK_ENABLED" \
             "NB_PROXY_PRIVATE" \
-            "3478" \
+            "3479" \
             "9443" \
-            "51820"; do
+            "51821"; do
             grep -qE "$needle" docker-compose.merged.tmp.yaml || {
               echo "::error::merged config missing '$needle' — upstream changed something our override relies on"
               exit 1
