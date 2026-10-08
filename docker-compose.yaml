@@ -1,5 +1,7 @@
 name: netbird
 networks:
+  default:
+    name: netbird_default
   reverse-proxy:
     external: true
     name: reverse-proxy
@@ -68,11 +70,6 @@ services:
         max-size: 500m
     networks:
       reverse-proxy: null
-    ports:
-      - mode: ingress
-        protocol: udp
-        published: "3478"
-        target: 3478
     restart: unless-stopped
     volumes:
       - source: netbird_data
@@ -131,6 +128,45 @@ services:
         source: /opt/traefik/certs/savorcare.com
         target: /wildcard-certs
         type: bind
+  relay:
+    container_name: netbird-relay
+    environment:
+      NB_AUTH_SECRET: ${NB_RELAY_AUTH_SECRET}
+      NB_ENABLE_STUN: "true"
+      NB_EXPOSED_ADDRESS: rels://relay.netbird.savorcare.com:9443
+      NB_LISTEN_ADDRESS: :9443
+      NB_LOG_LEVEL: info
+      NB_STUN_PORTS: "3478"
+      NB_TLS_CERT_FILE: /certs/fullchain.pem
+      NB_TLS_KEY_FILE: /certs/key.pem
+    image: jcr.savorcare.com/docker/netbirdio/relay@sha256:1aff236dc73fde48857d6619816f442daa1035758f4d38a208c7b46752836484
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        protocol: tcp
+        published: "9443"
+        target: 9443
+      - mode: ingress
+        protocol: udp
+        published: "9443"
+        target: 9443
+      - mode: ingress
+        protocol: udp
+        published: "3478"
+        target: 3478
+    restart: unless-stopped
+    volumes:
+      - bind:
+          create_host_path: true
+        read_only: true
+        source: /opt/traefik/certs/savorcare.com
+        target: /certs
+        type: bind
+      - source: relay_data
+        target: /data
+        type: volume
+        volume: {}
 volumes:
   netbird_config:
     name: netbird_netbird_config
@@ -138,3 +174,5 @@ volumes:
     name: netbird_netbird_data
   netbird_proxy_certs:
     name: netbird_netbird_proxy_certs
+  relay_data:
+    name: netbird_relay_data

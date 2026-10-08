@@ -1,0 +1,93 @@
+<mxfile host="app.diagrams.net" agent="netbird-compose" version="24.0.0">
+  <diagram name="public-access-architecture" id="nb-public-access">
+    <mxGraphModel dx="1000" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="800" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- external -->
+        <mxCell id="peer" value="&lt;b&gt;外部 peer&lt;/b&gt;&lt;br/&gt;员工笔记本 / agent 设备&lt;br/&gt;（NetBird Client）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="190" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="vps" value="&lt;b&gt;VPS · frps&lt;/b&gt;&lt;br/&gt;仅 TCP 443 纯透传&lt;br/&gt;TLS 不终结 · SNI 原样&lt;br/&gt;（0.5C/512MB 足够）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="330" y="30" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="llm" value="&lt;b&gt;上游 LLM API&lt;/b&gt;&lt;br/&gt;OpenAI / Anthropic / 网关" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="960" y="610" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- company edge -->
+        <mxCell id="edge" value="公司边界 · OPNSense（静态 IP，ISP 封 443/80 入站）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#d6b656;dashed=1;verticalAlign=top;fontSize=12;fontColor=#7a6a30" vertex="1" parent="1">
+          <mxGeometry x="280" y="150" width="620" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="nat" value="&lt;b&gt;端口映射&lt;/b&gt;（非 web 端口可用）&lt;br/&gt;9443 tcp/udp → relay&lt;br/&gt;3478/udp → relay（STUN）&lt;br/&gt;51820/udp → proxy（可选）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="300" y="180" width="210" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="opn" value="&lt;b&gt;OPNSense NetBird 客户端&lt;/b&gt;&lt;br/&gt;routing peer：发布 VLAN 网段&lt;br/&gt;ACL 管控跨 VLAN 授权" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="660" y="180" width="220" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- docker1 -->
+        <mxCell id="docker1" value="docker1（公司内网，compose 项目 netbird）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;fontSize=12;fontColor=#666666" vertex="1" parent="1">
+          <mxGeometry x="280" y="290" width="620" height="380" as="geometry" />
+        </mxCell>
+        <mxCell id="traefik" value="&lt;b&gt;traefik :443&lt;/b&gt;&lt;br/&gt;固定证书（OPNSense 同步）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="310" y="320" width="200" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="server" value="&lt;b&gt;netbird-server&lt;/b&gt;&lt;br/&gt;management / signal / oauth2 / api&lt;br/&gt;（内嵌 relay+STUN 已关闭）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="310" y="400" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="dashboard" value="&lt;b&gt;dashboard&lt;/b&gt;（管理 UI）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="310" y="480" width="240" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="relay" value="&lt;b&gt;relay 容器&lt;/b&gt;（netbirdio/relay）&lt;br/&gt;:9443 WebSocket+QUIC · :3478 STUN&lt;br/&gt;证书 = 同步泛域名（启动读一次，续期后重启）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="610" y="400" width="270" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="proxy" value="&lt;b&gt;proxy 容器&lt;/b&gt;（agent network）&lt;br/&gt;WG peer，:51820/udp&lt;br/&gt;不公网暴露" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="610" y="490" width="270" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- VLANs -->
+        <mxCell id="vlan" value="&lt;b&gt;公司 VLAN 资源&lt;/b&gt;&lt;br/&gt;VLAN10 服务器 / VLAN20 办公 / ..." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#666666;fontSize=12;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="960" y="180" width="200" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- edges -->
+        <mxCell id="e1" value="① 控制面 TLS :443&lt;br/&gt;netbird.savorcare.com" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="peer" target="vps">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="frp 隧道（frpc 主动拨出，&lt;br/&gt;公司侧零入站）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#d6b656;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="vps" target="traefik">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10" edge="1" parent="1" source="traefik" target="server">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10" edge="1" parent="1" source="traefik" target="dashboard">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="② STUN 3478/udp（打洞）&lt;br/&gt;③ relay 9443 tcp/udp（兜底）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="peer" target="nat">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10" edge="1" parent="1" source="nat" target="relay">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="④ WG P2P 直连（打洞成功后的数据面）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;dashed=1;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="peer" target="opn">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="路由转发" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="opn" target="vlan">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" value="agent network：WG 隧道内&lt;br/&gt;（不经公网入口）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;dashed=1;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="peer" target="proxy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" value="注入 key 转发" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#b85450;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="proxy" target="llm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note" value="带宽分布：VPS 只扛控制面（KB 级）；relay 兜底与 P2P 数据面全走公司静态 IP；agent LLM 流量走 WG 隧道到 proxy。" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontColor=#666666" vertex="1" parent="1">
+          <mxGeometry x="300" y="690" width="620" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
