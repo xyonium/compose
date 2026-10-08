@@ -201,6 +201,6 @@ concurrency group `netbird-sync`。
 - docker1 证书同步的实际落盘路径（override 的 `/opt/traefik/certs` 为占位）。
 - endpoint 的 overlay DNS 记录是否由 management 自动下发（connect provider 后验证）。
 - proxy 固定 WG 端口 51820 与 docker1 上潜在 netbird client 的端口冲突（预检）。
-- 远程 proxy（跨主机第二个 proxy 实例）如未来需要，再补 `/management.ProxyService/`
-  的 gRPC 路由前缀（option 0 与 option 1 渲染的唯一路由差异，本设计刻意不跟）。
+- ~~远程 proxy 路由差异~~（已关闭：override 用同 key label 覆盖给 gRPC 路由补上了
+  `/management.ProxyService/` 前缀，未来加跨主机远程 proxy 无需再动路由）。
 </content>

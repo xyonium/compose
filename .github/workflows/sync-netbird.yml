@@ -185,6 +185,7 @@ jobs:
             "container_name: netbird-dashboard" \
             "container_name: netbird-proxy" \
             "container_name: netbird-relay" \
+            "management.ProxyService/" \
             "jcr.savorcare.com/docker/netbirdio" \
             "traefik.enable" \
             "http2https" \
