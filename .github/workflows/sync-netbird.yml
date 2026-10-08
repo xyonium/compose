@@ -163,9 +163,9 @@ jobs:
           docker compose -f docker-compose.upstream.yaml -f docker-compose.upstream-proxy.yaml \
             -f docker-compose.portainer.yaml config --no-interpolate > docker-compose.merged.tmp.yaml
 
-          # 钉 3 个 netbirdio 主镜像 digest（latest 浮动 tag；runner 访问不了私服 mirror，
+          # 钉 4 个镜像 digest（netbirdio 三件套 latest 浮动 tag + relay；runner 访问不了私服 mirror，
           # 从 docker.io 解析后写回 mirror 镜像行，正则锚定行尾）
-          for repo in netbirdio/netbird-server netbirdio/dashboard netbirdio/reverse-proxy; do
+          for repo in netbirdio/netbird-server netbirdio/dashboard netbirdio/reverse-proxy netbirdio/relay; do
             digest=$(docker buildx imagetools inspect "${repo}:latest" --format '{{.Manifest.Digest}}')
             [ -n "$digest" ] || { echo "::error::empty digest for $repo"; exit 1; }
             image="jcr.savorcare.com/docker/${repo}"
@@ -174,7 +174,7 @@ jobs:
             grep -q "${image}@${digest}" docker-compose.merged.tmp.yaml || {
               echo "::error::pin failed for $image"; exit 1; }
           done
-          test "$(grep -c '@sha256:' docker-compose.merged.tmp.yaml)" = 3
+          test "$(grep -c '@sha256:' docker-compose.merged.tmp.yaml)" = 4
 
           # 哨兵检查：上游若改了我们 override 依赖的东西，大声失败而不是部署坏配置。
           #（只用短 token——生成文件会折叠长行）
@@ -184,6 +184,7 @@ jobs:
             "container_name: netbird-server\$" \
             "container_name: netbird-dashboard" \
             "container_name: netbird-proxy" \
+            "container_name: netbird-relay" \
             "jcr.savorcare.com/docker/netbirdio" \
             "traefik.enable" \
             "http2https" \
@@ -191,10 +192,15 @@ jobs:
             "netbird_data" \
             "netbird_config" \
             "netbird_proxy_certs" \
+            "relay_data" \
             'NB_PROXY_TOKEN: \${NB_PROXY_TOKEN}' \
+            'NB_AUTH_SECRET: \${NB_RELAY_AUTH_SECRET}' \
+            "rels://relay.netbird.savorcare.com:9443" \
+            "NB_TLS_CERT_FILE" \
             "NETBIRD_AGENT_NETWORK_ENABLED" \
             "NB_PROXY_PRIVATE" \
             "3478" \
+            "9443" \
             "51820"; do
             grep -qE "$needle" docker-compose.merged.tmp.yaml || {
               echo "::error::merged config missing '$needle' — upstream changed something our override relies on"
