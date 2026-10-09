@@ -16,6 +16,7 @@
 #   7. server/worker 增加 AUTHENTIK_EMAIL__* 透传：全局 SMTP 没有界面设置、只能
 #      env（官方口径），而清了 env_file 后平台 env 只做插值不进容器，必须显式
 #      透传；值仍由部署平台的项目 env 注入，不进 git
+#   8. server 透传 AUTHENTIK_WEB__WORKERS（默认 4，见 server 段注释）
 
 name: authentik
 
@@ -33,6 +34,10 @@ services:
       AUTHENTIK_EMAIL__USE_SSL: ${AUTHENTIK_EMAIL__USE_SSL:-false}
       AUTHENTIK_EMAIL__TIMEOUT: ${AUTHENTIK_EMAIL__TIMEOUT:-10}
       AUTHENTIK_EMAIL__FROM: ${AUTHENTIK_EMAIL__FROM:-}
+      # gunicorn web worker 数（上游默认 2）。docker1 是 LXC、Atom 弱单核，
+      # admin 界面单页并发 ~30 个 API 请求，worker 数=核数改善的是并行页面
+      # 加载，单请求延迟不变。与 LXC cores 联动调整（2026-10 定为 4 核）
+      AUTHENTIK_WEB__WORKERS: ${AUTHENTIK_WEB__WORKERS:-4}
     # 不暴露宿主端口（清掉上游的 ${COMPOSE_PORT_HTTP/HTTPS} 映射），
     # 外部访问走 traefik；容器 9000 经 reverse-proxy 网络可达
     ports: !reset null
