@@ -48,6 +48,7 @@ services:
       - AUTHENTIK_EMAIL__USERNAME=${AUTHENTIK_EMAIL__USERNAME:-}
       - AUTHENTIK_EMAIL__USE_SSL=${AUTHENTIK_EMAIL__USE_SSL:-false}
       - AUTHENTIK_EMAIL__USE_TLS=${AUTHENTIK_EMAIL__USE_TLS:-false}
+      - AUTHENTIK_WEB__WORKERS=${AUTHENTIK_WEB__WORKERS:-4}
     image: jcr.savorcare.com/ghcr/goauthentik/server@sha256:ab9b4e8cc4ab3f8d1198d2db6aeea66bafea1963b3f2843589e0d163f97d9849
     labels:
       - traefik.enable=true
