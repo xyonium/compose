@@ -10,7 +10,7 @@ services:
     container_name: netbird-dashboard
     environment:
       AUTH_AUDIENCE: netbird-dashboard
-      AUTH_AUTHORITY: https://netbird.savorcare.com:10443/oauth2
+      AUTH_AUTHORITY: https://netbird.savorcare.com/oauth2
       AUTH_CLIENT_ID: netbird-dashboard
       AUTH_CLIENT_SECRET: ""
       AUTH_REDIRECT_URI: /nb-auth
@@ -18,8 +18,8 @@ services:
       AUTH_SUPPORTED_SCOPES: openid profile email groups
       LETSENCRYPT_DOMAIN: none
       NETBIRD_AGENT_NETWORK_ENABLED: "true"
-      NETBIRD_MGMT_API_ENDPOINT: https://netbird.savorcare.com:10443
-      NETBIRD_MGMT_GRPC_API_ENDPOINT: https://netbird.savorcare.com:10443
+      NETBIRD_MGMT_API_ENDPOINT: https://netbird.savorcare.com
+      NETBIRD_MGMT_GRPC_API_ENDPOINT: https://netbird.savorcare.com
       NGINX_SSL_PORT: "443"
       USE_AUTH0: "false"
     image: jcr.savorcare.com/docker/netbirdio/dashboard@sha256:70e0fc6dd3b7758148d182fb55ecd8d4f9ce01e9bba56c9389224e0b8354009d

@@ -19,14 +19,12 @@ services:
     image: jcr.savorcare.com/docker/netbirdio/dashboard:latest
     env_file: !reset null
     environment:
-      # 外部访问经公司静态 IP:10443（OPNSense 映射 → traefik 443）；
-      # 内部 split-horizon 走 443 不受影响——所以这里带端口，内网浏览器会打 :10443 也能通
-      NETBIRD_MGMT_API_ENDPOINT: https://netbird.savorcare.com:10443
-      NETBIRD_MGMT_GRPC_API_ENDPOINT: https://netbird.savorcare.com:10443
+      NETBIRD_MGMT_API_ENDPOINT: https://netbird.savorcare.com
+      NETBIRD_MGMT_GRPC_API_ENDPOINT: https://netbird.savorcare.com
       AUTH_AUDIENCE: netbird-dashboard
       AUTH_CLIENT_ID: netbird-dashboard
       AUTH_CLIENT_SECRET: ""
-      AUTH_AUTHORITY: https://netbird.savorcare.com:10443/oauth2
+      AUTH_AUTHORITY: https://netbird.savorcare.com/oauth2
       USE_AUTH0: "false"
       AUTH_SUPPORTED_SCOPES: openid profile email groups
       AUTH_REDIRECT_URI: /nb-auth
