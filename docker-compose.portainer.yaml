@@ -84,7 +84,12 @@ services:
       NB_ENABLE_STUN: "true"
       NB_STUN_PORTS: "3479"
     volumes:
-      - ${NETBIRD_CERT_DIR}:/certs:ro
+      # 证书 bind 用长语法——短语法 ${VAR}:/path 会被 compose 归一化成 named volume
+      # （docker compose 对插值 shorthand 的类型猜测缺陷，sync 实跑后才暴露）
+      - type: bind
+        source: ${NETBIRD_CERT_DIR}
+        target: /certs
+        read_only: true
       - relay_data:/data
 
   proxy:
@@ -120,7 +125,10 @@ services:
       - reverse-proxy
     volumes:
       - netbird_proxy_certs:/certs
-      - ${NETBIRD_CERT_DIR}:/wildcard-certs:ro
+      - type: bind
+        source: ${NETBIRD_CERT_DIR}
+        target: /wildcard-certs
+        read_only: true
 
 volumes:
   netbird_config:
