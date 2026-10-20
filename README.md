@@ -1,0 +1,83 @@
+# authentik
+
+这个分支是部署 [goauthentik/authentik](https://github.com/goauthentik/authentik)（IdP/SSO）
+的专用分支，与 main 完全独立（orphan branch），只包含部署所需文件。域名、registry
+主机名一律不入库：下文以 `authentik.your-domain.example` 指代访问域名，`${JCR_REGISTRY}`
+指代私服镜像 mirror 主机名，真实值部署时由平台项目 env 注入。
+
+| 文件 | 用途 | 谁来改 |
+|---|---|---|
+| `docker-compose.yaml` | **预合并生成文件**：上游 compose + 平台自定义层合并后的最终结果，server/worker 主镜像已按 digest 钉版，部署平台直接使用它（`${VAR}` 变量保留，由平台的项目 env 注入） | **只由机器人生成**，手改会被覆盖 |
+| `docker-compose.upstream.yaml` | 上游官方安装文件 <https://goauthentik.io/docker-compose.yml> 的原样拷贝 | **只由机器人改** |
+| `docker-compose.portainer.yaml` | 我们的全部自定义（镜像 mirror、traefik、reverse-proxy 网络、卷、项目名固定、SMTP 透传） | **要调整部署只改这个文件** |
+| `.env.example` | 项目 env 参考模板（上游没有官方版，本分支手维——必填凭据 + 域名/registry + 全局 SMTP 八变量） | 手改 |
+
+部署目标：**部署主机**，经 traefik 反代到 `https://${AUTHENTIK_DOMAIN}`
+（本文示例写作 `authentik.your-domain.example`）。
+
+## 自定义内容（相对上游）
+
+- 镜像全部走私服 mirror：`${JCR_REGISTRY}/ghcr/goauthentik/server`、
+  `${JCR_REGISTRY}/docker/library/postgres:16-alpine`（registry 主机名走项目 env）
+- **主镜像写死版本 tag（当前 2026.8.3）**：authentik 是有状态服务，大版本升级必须先看
+  [上游 release notes](https://docs.goauthentik.io/docs/releases/)，升级方法见下文「升级」
+- server 摘掉宿主端口映射（上游默认 `9000`/`9443`），改走 traefik：
+  `https://${AUTHENTIK_DOMAIN}`，**部署主机风格**——websecure 入口已全局 TLS + 固定证书
+  文件，路由只写 `tls=true`，不写 certresolver；web 入口挂 `http2https` 跳转中间件
+  （部署主机的 traefik 栈已定义）；容器端口显式钉 9000
+- 清掉三个服务的 `env_file: .env`：仓库里没有这个文件（上游 compose 面向手动部署），
+  变量一律由部署平台的项目 env 注入；留着它 `docker compose config` 会因找不到文件报错
+- server/worker 增加 `AUTHENTIK_EMAIL__*` 八变量透传：**全局 SMTP 在界面上没有设置页、
+  只能 env 配**（官方口径），而清了 env_file 后平台 env 只做插值不进容器，必须显式透传；
+  值仍由平台项目 env 注入，不进 git
+- `./data` 绑定挂载转命名卷 `data`（server/worker 共享，实际卷名恒为 `authentik_data`）；
+  `./custom-templates`、`./certs` 两个挂载去掉（自定义模板/证书需要时改 override 加回）；
+  worker 的 `/var/run/docker.sock` 保留（上游默认，managed outpost 要用）
+- 顶层 `name: authentik` 固定项目名：数据卷不随平台项目名变化，重建项目自动挂回
+- postgresql 保持上游：命名卷 `database`、healthcheck、`POSTGRES_PASSWORD` 的 `:?` 断言
+- 2026 版起上游已无 redis，共三服务：postgresql / server / worker
+
+## 部署配置（Arcane）
+
+新建项目，compose 用本分支的 `docker-compose.yaml`；变量配在项目 env（.env）里，不进 git。
+
+### 项目 env
+
+完整模板见本分支 `.env.example`（生成命令都在里面）。汇总表：
+
+| 变量 | 说明 | 形态示例 |
+|---|---|---|
+| `AUTHENTIK_DOMAIN` 🆕 | **必填**，对外访问域名。compose 内 2 条 traefik Host 路由（websecure 主路由 + web 跳转路由）由它派生 | `sso.company.example` |
+| `JCR_REGISTRY` 🆕 | **必填**，私服镜像 mirror 主机名。**只写主机名**（不带协议不带路径）；3 个镜像 ref 为 `${JCR_REGISTRY}/ghcr/…`、`${JCR_REGISTRY}/docker/…` | `registry.company.example` |
+| `PG_PASS` | **必填**（上游 `:?` 断言，不设拒绝启动），postgresql 超级用户密码；`openssl rand -hex 32` 生成 | |
+| `AUTHENTIK_SECRET_KEY` | **必填**（上游 `:?` 断言），authentik 加密密钥（session/凭据加密），丢失 = 所有加密数据不可解，务必备份；`openssl rand -base64 60 \| tr -d '\n'` 生成 | |
+| `PG_DB` / `PG_USER` | 可选，默认都是 `authentik` | |
+| `AUTHENTIK_WEB__WORKERS` | 可选，admin 界面并行加载优化（默认 4，与部署主机 LXC 核数联动） | `4` |
+| `AUTHENTIK_EMAIL__*` | 可选，全局 SMTP 八变量（找回密码/通知邮件；界面无设置页只能 env，已做透传）。587 用 `USE_TLS=true`、465 用 `USE_SSL=true`，勿同开；配好执行 `docker compose exec worker ak test_email <邮箱>` 验证 | |
+
+### 初始管理员
+
+首启后访问 `https://authentik.your-domain.example/if/flow/initial-setup/` 按官方引导创建 admin。
+
+### 升级
+
+1. 看上游 [release notes](https://docs.goauthentik.io/docs/releases/) 确认无跨版本注意事项
+2. 改 `docker-compose.portainer.yaml` 里两处 `2026.8.3` → 新版本，push
+3. 手动跑一次同步 workflow（Actions → **Sync authentik compose** → Run workflow），
+   bot 重新合并并按新 tag 钉 digest 推回（`docker-compose.yaml` 是 bot 产物，
+   只改 override 不跑同步的话线上文件不会变）
+4. 平台侧按惯例同步项目并重建
+
+## 同步机制
+
+同步工作流在 compose 仓库 `main` 分支的 `.github/workflows/sync-authentik.yml`
+（GitHub 定时任务只跑默认分支，所以工作流放 main，操作后推回本分支）。
+**只走 workflow_dispatch 手动触发**——分支 push 不会触发任何自动化，定时调度刻意注释。
+
+同步逻辑：拉上游 compose → 与 override `--no-interpolate` 合并（`${VAR}` 模板保留）→
+从合并产物提取当前 tag，按 `ghcr.io/goauthentik/server:<tag>` 解析 digest 钉版 →
+哨兵校验（含 leakage 总闸：任何文件残留真实域名/公司标识即失败，实际 pattern 定义在
+workflow 里，不入库）→
+有变化才提交推回。上游做了与 override 不兼容的改动时 Action **失败并通知**，
+线上保持旧版本不受影响。回滚：在本分支 revert 对应 sync commit，平台侧重新部署
+（digest 历史都在 git 里）。
