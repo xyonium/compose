@@ -120,7 +120,7 @@ services:
         type: volume
         volume: {}
       - read_only: true
-        source: /home/runner/work/compose/compose/${NETBIRD_CERT_DIR}
+        source: /${NETBIRD_CERT_DIR}
         target: /wildcard-certs
         type: bind
   relay:
@@ -153,7 +153,7 @@ services:
     restart: unless-stopped
     volumes:
       - read_only: true
-        source: /home/runner/work/compose/compose/${NETBIRD_CERT_DIR}
+        source: /${NETBIRD_CERT_DIR}
         target: /certs
         type: bind
       - source: relay_data
