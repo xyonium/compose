@@ -100,18 +100,46 @@ NetBird 全功能自建（VPN 管理 + **Agent Network** Beta）。管理面与 
 
 ## 公网接入架构（泛化描述，拓扑已脱敏）
 
-双层入口并行，peer↔peer WireGuard 数据面纯 P2P（STUN 打洞 + relay 兜底）：
-
-| 平面 | 谁可达 | 链路 | 证书 |
-|---|---|---|---|
-| 管理面（外部 peer） | 持有 NetBird client 的设备 | 公网：VPS 的 L4 SNI 透传 → 边界映射 10443 → traefik:443；内网：split-horizon DNS 直连 traefik:443（TLS 端到端，不经中间件） | 部署主机 traefik 泛域名证书 |
-| 管理面（访客，免客户端） | 任意浏览器 | `服务子域.example.com` → VPS 反代终结 → 本机 `netbird-public-proxy` 容器（内嵌 WG client，流量走隧道到内网 routing peer → 内网资源） | VPS 反代自己的泛域名证书 |
-| Agent Network endpoint | agent 机上 NetBird client（overlay only） | 本机 WG peer → proxy 容器 :8443（不经 traefik、不经任何公网入口） | `NETBIRD_CERT_DIR` 同步的泛域名证书（热加载） |
-| relay + STUN | 任何 peer | `relay.<域名>:9443/tcp+udp`（WSS/QUIC）+ `3479/udp`（纯 UDP）→ 边界端口映射 → relay 容器 | 同目录证书，**启动读一次，续期后重启容器** |
+双层入口并行，peer↔peer WireGuard 数据面纯 P2P（STUN 打洞 + relay 兜底）。
 
 **管理面与访客面分离**：管理面域名在 VPS 上只做 L4 SNI 透传（TLS 端到端到内网），
 访客服务子域才在 VPS 终结——两边证书、解析、失效互不影响。VPS 上除 SNI 分流器与
 访客反代之外没有任何转发中间件。
+
+```mermaid
+flowchart TB
+    pub["访客浏览器（免 NetBird 客户端）"]
+    peer["公司 peer（NetBird client，员工/agent）"]
+    vps["公网 VPS<br/>——————————————————————<br/>① L4 SNI 路由器 :443：按 ClientHello 分流<br/>② 访客反代（Caddy 类）:8003<br/>泛通配证书终结 → :8444"]
+    pubproxy["VPS 上 netbird-public-proxy 容器<br/>——————————————————————<br/>内嵌 userspace netbird wg netstack<br/>（部署平台独立 compose 管理）"]
+    bfw["边界防火墙（公司）<br/>——————————————————————<br/>NetBird client 兼 routing peer<br/>L4 SNI sniffer：管理面 :10443 → 部署主机 traefik :443<br/>Networks 发布内网网段 + 资源域名 + ACL"]
+    d1["部署主机（内网控制面）<br/>——————————————————————<br/>traefik :443<br/>management+signal+dashboard :443<br/>relay+STUN :9443 (tcp/udp) + :3479 (udp)<br/>agent proxy :51821 (udp，WG 内）"]
+    dns1["内网权威 DNS（双机冗余）<br/>对内所有内网域名解析"]
+    lanres["内网资源<br/>——————————————————————<br/>AI 网关 / 内部服务<br/>（访客 NB-pub 子域 → 指到具体服务）"]
+    unbound["边界 DNS<br/>*.<br/>netbird.example.com<br/>→ 部署主机<br/>（内网直连；断外网仍可管理）"]
+
+    pub -- "TLS: <服务>.nb-pub.example.com<br/>（公网 DNS）" --> vps
+    vps -- "SNI :443 分流 + 终结" --> pubproxy
+    pubproxy -- "WireGuard tunneled forward<br/>→ 内网资源 via routing peer" --> bfw
+    pubproxy -. "内网 DNS 解析依赖：routing peer 上的<br/>内部 DNS（udp/53，由 ACL 放行）" .-> dns1
+    bfw -- "LAN SNI 透传 → traefik" --> d1
+    bfw --> lanres
+    peer <-. "P2P WireGuard（打洞后）" .-> bfw
+    dns1 <-. "split-horizon DNS：<br/>netbird.example.com → 部署主机:443 直连" .-> unbound
+    d1 <-. "LAN 管理面 + relay 回源" .-> bfw
+```
+_图例：`-.` 虚线 = control/DNS；`-->` 实线带文字 = data path；VPS L4 SNI 用纯 TCP 透传给
+部署主机 traefik（TLS 不终结）。_
+
+**分离公开 vs 私有 plane**
+
+| 名称 | 谁可达 | 走的链路 | 证书来源 |
+|---|---|---|---|
+| 管理面（外部 peer） | 公司 NetBird client | `netbird.example.com` → VPS L4 SNI 透传 → 边界 :10443 → 部署主机 traefik :443 | 部署主机 traefik 泛域名证书 |
+| 管理面（内网 peer） | 公司内网设备 | 内网 DNS 直连部署主机 traefik | 同上 |
+| 访客面（browser） | 任意 internet 浏览器 | `<服务>.nb-pub.example.com` → VPS 反代 → VPS netbird-public-proxy → WG → routing peer → 内网资源 | VPS 反代自己的泛通配证书 |
+| Agent Network endpoint | agent 机上 NetBird client（overlay only） | 本机 WG peer → proxy :8443 | `NETBIRD_CERT_DIR` 泛域名证书（热加载） |
+| relay + STUN | 任何 peer | `relay.netbird.example.com:9443` + `3479/udp` → 边界映射 → relay 容器 | 同目录证书（**启动读一次，续期后要重启**） |
 
 **routing peer（必要依赖）**：边界防火墙上的 NetBird client 配成 Networks 的
 routing peer——发布内网目标资源（建议按域名资源 + 内网权威 DNS 两条 host 资源配），
