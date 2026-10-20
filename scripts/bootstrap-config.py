@@ -9,7 +9,7 @@
     # trusted subnet 例：172.18.0.0/16（docker network inspect reverse-proxy 查）
 
 做的事（全部幂等断言，模板变了会报错而不是静默产坏文件）：
-  1. 模板中的占位域名 netbird.example.com → 真实域名（分支上的模板已脱敏，
+  1. 模板中的占位域名 netbird.your-domain.example → 真实域名（分支上的模板已脱敏，
      站务平台与风控审计时仓库里不留真实域名）
   2. 3 个 __GENERATE_AT_DEPLOY__ → 随机密钥（authSecret 去 base64 尾 =，与上游脚本一致；
      其余两个保留 =）
@@ -26,7 +26,7 @@ import re
 import secrets
 import sys
 
-TEMPLATE_DOMAIN = "netbird.example.com"
+TEMPLATE_DOMAIN = "netbird.your-domain.example"
 
 
 def b64(strip_padding=False):

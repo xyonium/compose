@@ -1,13 +1,13 @@
 # netbird 分支
 
 NetBird 全功能自建（VPN 管理 + **Agent Network** Beta）。管理面与 endpoint 使用
-**同一个 base 域名**，下文统一以 `netbird.example.com` 指代；真实域名不入库，
+**同一个 base 域名**，下文统一以 `netbird.your-domain.example` 指代；真实域名不入库，
 部署时由部署平台项目 env 注入 `${NETBIRD_DOMAIN}`。
 
 上游没有静态 compose 文件：官方安装入口是交互式脚本 `getting-started.sh`
 （内嵌 Dex IdP，无需外部 IdP）。本分支的上游产物由 main 的 `sync-netbird.yml`
 在 Action 里 **source 脚本、只调渲染函数（不部署）** 生成，渲染时使用占位域名
-`netbird.example.com`——分支任何文件都不含真实域名或拓扑信息。
+`netbird.your-domain.example`——分支任何文件都不含真实域名或拓扑信息。
 
 - 第一次渲染（`REVERSE_PROXY_TYPE=1`，外部 traefik）→ `docker-compose.upstream.yaml`
   （dashboard + netbird-server，标签为固定证书风格 `tls=true`）
@@ -40,13 +40,13 @@ NetBird 全功能自建（VPN 管理 + **Agent Network** Beta）。管理面与 
 ## 首次 bootstrap（按序执行）
 
 1. **DNS**（split-horizon，公网/内网各一条，同一域名不同指向）：
-   - `netbird.example.com`：公网解析指向你的公网入口（见「公网接入架构」），
+   - `netbird.your-domain.example`：公网解析指向你的公网入口（见「公网接入架构」），
      内网权威 DNS 指到部署主机的 traefik（断外网时管理面仍可用）；
-   - `relay.netbird.example.com`：公网指向出口静态 IP（边界映射回部署主机的
+   - `relay.netbird.your-domain.example`：公网指向出口静态 IP（边界映射回部署主机的
      relay 容器）；内网同样指部署主机即可。
-   - `*.netbird.example.com` 公网泛解析仅在启用「公网访客入口」时才需要
+   - `*.netbird.your-domain.example` 公网泛解析仅在启用「公网访客入口」时才需要
      （agent network endpoint 只在 WG overlay 内解析，默认不需要）。
-2. **证书**：泛域名证书须包含 `netbird.example.com` 与 `*.netbird.example.com`
+2. **证书**：泛域名证书须包含 `netbird.your-domain.example` 与 `*.netbird.your-domain.example`
    （后者仅 agent endpoint/访客入口需要），同步到宿主 `NETBIRD_CERT_DIR`。
    **proxy/relay 容器以 UID/GID 1000 运行（非 root）**，同步工具须设置：
    公钥/私钥权限 `0440`、组 `1000`（owner 保持 root），否则容器读不到私钥。
@@ -84,14 +84,14 @@ NetBird 全功能自建（VPN 管理 + **Agent Network** Beta）。管理面与 
    ```
 
    输出 `nbx_...` 填入项目 env `NB_PROXY_TOKEN`，重建项目（此前 proxy 起不来属预期）。
-6. **建首个管理员**：浏览器开 `https://netbird.example.com/setup`（仅无用户时可见）。
+6. **建首个管理员**：浏览器开 `https://netbird.your-domain.example/setup`（仅无用户时可见）。
 
 ## Agent Network 验证
 
 1. Dashboard 左侧应出现 **Agent Network** 菜单（Peers/DNS 等常规页面同时保留——
    本部署是完整面板，非 ONLY 模式）。
 2. **Agent Network → Providers → Connect Provider**：填入 provider 密钥，
-   保存后生成 tunnel-only endpoint（`*.netbird.example.com` 形态）。
+   保存后生成 tunnel-only endpoint（`*.netbird.your-domain.example` 形态）。
 3. **Policies → Add Policy**：把 source group 关联到 provider（默认全拒）。
 4. 测试设备连 NetBird 客户端后，在 overlay 内 curl endpoint 验证；
    **Usage & Logs** 应记录身份/模型/token/费用。
@@ -116,7 +116,7 @@ flowchart TB
     d1["部署主机（内网控制面）<br/>——————————————————————<br/>traefik :443<br/>management+signal+dashboard :443<br/>relay+STUN :9443 (tcp/udp) + :3479 (udp)<br/>agent proxy :51821 (udp，WG 内）"]
     dns1["内网权威 DNS（双机冗余）<br/>对内所有内网域名解析"]
     lanres["内网资源<br/>——————————————————————<br/>AI 网关 / 内部服务<br/>（访客 NB-pub 子域 → 指到具体服务）"]
-    unbound["边界 DNS<br/>*.<br/>netbird.example.com<br/>→ 部署主机<br/>（内网直连；断外网仍可管理）"]
+    unbound["边界 DNS<br/>*.<br/>netbird.your-domain.example<br/>→ 部署主机<br/>（内网直连；断外网仍可管理）"]
 
     pub -- "TLS: <服务>.nb-pub.example.com<br/>（公网 DNS）" --> vps
     vps -- "SNI :443 分流 + 终结" --> pubproxy
@@ -125,7 +125,7 @@ flowchart TB
     bfw -- "LAN SNI 透传 → traefik" --> d1
     bfw --> lanres
     peer <-. "P2P WireGuard（打洞后）" .-> bfw
-    dns1 <-. "split-horizon DNS：<br/>netbird.example.com → 部署主机:443 直连" .-> unbound
+    dns1 <-. "split-horizon DNS：<br/>netbird.your-domain.example → 部署主机:443 直连" .-> unbound
     d1 <-. "LAN 管理面 + relay 回源" .-> bfw
 ```
 _图例：`-.` 虚线 = control/DNS；`-->` 实线带文字 = data path；VPS L4 SNI 用纯 TCP 透传给
@@ -135,11 +135,11 @@ _图例：`-.` 虚线 = control/DNS；`-->` 实线带文字 = data path；VPS L4
 
 | 名称 | 谁可达 | 走的链路 | 证书来源 |
 |---|---|---|---|
-| 管理面（外部 peer） | 公司 NetBird client | `netbird.example.com` → VPS L4 SNI 透传 → 边界 :10443 → 部署主机 traefik :443 | 部署主机 traefik 泛域名证书 |
+| 管理面（外部 peer） | 公司 NetBird client | `netbird.your-domain.example` → VPS L4 SNI 透传 → 边界 :10443 → 部署主机 traefik :443 | 部署主机 traefik 泛域名证书 |
 | 管理面（内网 peer） | 公司内网设备 | 内网 DNS 直连部署主机 traefik | 同上 |
 | 访客面（browser） | 任意 internet 浏览器 | `<服务>.nb-pub.example.com` → VPS 反代 → VPS netbird-public-proxy → WG → routing peer → 内网资源 | VPS 反代自己的泛通配证书 |
 | Agent Network endpoint | agent 机上 NetBird client（overlay only） | 本机 WG peer → proxy :8443 | `NETBIRD_CERT_DIR` 泛域名证书（热加载） |
-| relay + STUN | 任何 peer | `relay.netbird.example.com:9443` + `3479/udp` → 边界映射 → relay 容器 | 同目录证书（**启动读一次，续期后要重启**） |
+| relay + STUN | 任何 peer | `relay.netbird.your-domain.example:9443` + `3479/udp` → 边界映射 → relay 容器 | 同目录证书（**启动读一次，续期后要重启**） |
 
 **routing peer（必要依赖）**：边界防火墙上的 NetBird client 配成 Networks 的
 routing peer——发布内网目标资源（建议按域名资源 + 内网权威 DNS 两条 host 资源配），
@@ -170,7 +170,7 @@ draw.io 可编辑源文件（脱敏版）：[docs/final-architecture.drawio](doc
 若 VPS 上的公网 proxy 入口要退役、改由部署主机本机对外暴露访客面：
 
 1. override 给 proxy 加回 TCP passthrough 标签，`HostSNIRegexp` 收敛到
-   `^.+\.netbird.example.com$`（**不得**用上游的 `HostSNI(*)`，会接管共享
+   `^.+\.netbird.your-domain.example$`（**不得**用上游的 `HostSNI(*)`，会接管共享
    traefik 上其他栈的 443 流量）；
 2. proxy 开 `NB_PROXY_ACME_CERTIFICATES=true`（tls-alpn-01）或继续用静态证书；
 3. 内网 DNS 把 `*.服务子域` 指到部署主机（split-horizon）；

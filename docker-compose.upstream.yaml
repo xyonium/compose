@@ -9,7 +9,7 @@ services:
       - ./dashboard.env
     labels:
       - traefik.enable=true
-      - traefik.http.routers.netbird-dashboard.rule=Host(`netbird.example.com`)
+      - traefik.http.routers.netbird-dashboard.rule=Host(`netbird.your-domain.example`)
       - traefik.http.routers.netbird-dashboard.entrypoints=websecure
       - traefik.http.routers.netbird-dashboard.tls=true
 
@@ -36,13 +36,13 @@ services:
     labels:
       - traefik.enable=true
       # gRPC router (needs h2c backend for HTTP/2 cleartext)
-      - traefik.http.routers.netbird-grpc.rule=Host(`netbird.example.com`) && (PathPrefix(`/signalexchange.SignalExchange/`) || PathPrefix(`/management.ManagementService/`))
+      - traefik.http.routers.netbird-grpc.rule=Host(`netbird.your-domain.example`) && (PathPrefix(`/signalexchange.SignalExchange/`) || PathPrefix(`/management.ManagementService/`))
       - traefik.http.routers.netbird-grpc.entrypoints=websecure
       - traefik.http.routers.netbird-grpc.tls=true
 
       - traefik.http.routers.netbird-grpc.service=netbird-server-h2c
       # Backend router (relay, WebSocket, API, OAuth2)
-      - traefik.http.routers.netbird-backend.rule=Host(`netbird.example.com`) && (PathPrefix(`/relay`) || PathPrefix(`/ws-proxy/`) || PathPrefix(`/api`) || PathPrefix(`/oauth2`))
+      - traefik.http.routers.netbird-backend.rule=Host(`netbird.your-domain.example`) && (PathPrefix(`/relay`) || PathPrefix(`/ws-proxy/`) || PathPrefix(`/api`) || PathPrefix(`/oauth2`))
       - traefik.http.routers.netbird-backend.entrypoints=websecure
       - traefik.http.routers.netbird-backend.tls=true
 
