@@ -87,7 +87,7 @@ services:
       # 证书 bind 用长语法——短语法 ${VAR}:/path 会被 compose 归一化成 named volume
       # （docker compose 对插值 shorthand 的类型猜测缺陷，sync 实跑后才暴露）
       - type: bind
-        source: /${NETBIRD_CERT_DIR}
+        source: ${NETBIRD_CERT_DIR}
         target: /certs
         read_only: true
       - relay_data:/data
@@ -126,7 +126,7 @@ services:
     volumes:
       - netbird_proxy_certs:/certs
       - type: bind
-        source: /${NETBIRD_CERT_DIR}
+        source: ${NETBIRD_CERT_DIR}
         target: /wildcard-certs
         read_only: true
 
