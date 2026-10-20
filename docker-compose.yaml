@@ -49,7 +49,7 @@ services:
       - AUTHENTIK_EMAIL__USE_SSL=${AUTHENTIK_EMAIL__USE_SSL:-false}
       - AUTHENTIK_EMAIL__USE_TLS=${AUTHENTIK_EMAIL__USE_TLS:-false}
       - AUTHENTIK_WEB__WORKERS=${AUTHENTIK_WEB__WORKERS:-4}
-    image: ${JCR_REGISTRY}/ghcr/goauthentik/server@sha256:ab9b4e8cc4ab3f8d1198d2db6aeea66bafea1963b3f2843589e0d163f97d9849
+    image: ${JCR_REGISTRY}/ghcr/goauthentik/server@sha256:e7226ae116dac5aa0a5643803e735b010038f492c401e08e16b3bf1ac54c090c
     labels:
       - traefik.enable=true
       - traefik.docker.network=reverse-proxy
@@ -90,7 +90,7 @@ services:
       - AUTHENTIK_EMAIL__USERNAME=${AUTHENTIK_EMAIL__USERNAME:-}
       - AUTHENTIK_EMAIL__USE_SSL=${AUTHENTIK_EMAIL__USE_SSL:-false}
       - AUTHENTIK_EMAIL__USE_TLS=${AUTHENTIK_EMAIL__USE_TLS:-false}
-    image: ${JCR_REGISTRY}/ghcr/goauthentik/server@sha256:ab9b4e8cc4ab3f8d1198d2db6aeea66bafea1963b3f2843589e0d163f97d9849
+    image: ${JCR_REGISTRY}/ghcr/goauthentik/server@sha256:e7226ae116dac5aa0a5643803e735b010038f492c401e08e16b3bf1ac54c090c
     networks:
       default: null
     restart: unless-stopped
