@@ -1,0 +1,60 @@
+<mxfile host="app.diagrams.net" agent="compose-repo-netbird-branch" version="24.0.0" type="device">
+  <diagram name="agent-proxy-data-plane-sanitized" id="agentproxy1">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="800" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="peer-agent" value="&lt;b&gt;Agent 设备&lt;/b&gt;&lt;br/&gt;Claude Code / Codex / 自研 agent&lt;br/&gt;（NetBird Client = WG peer，不带任何 API key）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="peer-admin" value="&lt;b&gt;管理员设备&lt;/b&gt;&lt;br/&gt;浏览器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="zone-d1" value="部署主机（compose 项目 netbird）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;fontSize=12;fontColor=#666666" vertex="1" parent="1">
+          <mxGeometry x="360" y="40" width="480" height="440" as="geometry" />
+        </mxCell>
+        <mxCell id="proxy" value="&lt;b&gt;proxy 容器&lt;/b&gt;（netbirdio/reverse-proxy）&lt;br/&gt;内嵌 userspace WireGuard netstack，监听 :8443&lt;br/&gt;主证书 = 泛域名证书目录绑载（热加载）&lt;br/&gt;私有模式：无 traefik 路由，仅 overlay 内可达" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontSize=11;align=left;spacingLeft=8" vertex="1" parent="1">
+          <mxGeometry x="380" y="70" width="440" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="pipeline" value="&lt;b&gt;请求流水线（middleware chain）&lt;/b&gt;&lt;br/&gt;① 身份：WG 源 IP → peer 身份 + 组&lt;br/&gt;② 解析：模型 / 流式标记&lt;br/&gt;③ 路由+策略+配额+guardrail&lt;br/&gt;④ 剥离客户端认证头，注入 provider key&lt;br/&gt;⑤ 转发 → 响应计量 → 回写 usage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="380" y="170" width="440" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="server" value="&lt;b&gt;netbird-server 容器&lt;/b&gt;&lt;br/&gt;management + signal 一体&lt;br/&gt;控制面：providers / policies / limits / usage（sqlite）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="380" y="300" width="440" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="dashboard" value="&lt;b&gt;dashboard 容器&lt;/b&gt;（管理 UI，仅供管理员）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="380" y="380" width="440" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="traefik" value="宿主 traefik（443 固定证书）&lt;br/&gt;只路由 dashboard + netbird-server；&lt;b&gt;proxy 不经 traefik&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=middle;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="380" y="440" width="440" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="llm" value="&lt;b&gt;上游 LLM（公网）&lt;/b&gt;&lt;br/&gt;OpenAI / Anthropic / AI 网关&lt;br/&gt;（provider key 只存在服务端）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="920" y="120" width="240" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" value="WG 隧道内 HTTPS&lt;br/&gt;endpoint = xxx.example.com&lt;br/&gt;客户端不带任何 API key" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="peer-agent" target="proxy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="注入 key 后转发（公网 egress）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#b85450;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="proxy" target="llm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="内网 :80&lt;br/&gt;身份/策略查询 + 用量回写" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="proxy" target="server">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="443 管理 UI" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6c8ebf;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="peer-admin" target="traefik">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="控制面下发（providers/policies/limits）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;dashed=1;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="server" target="proxy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note" value="&lt;b&gt;要点&lt;/b&gt;：agent 流量全程 WireGuard 隧道，不经过任何反向代理；&lt;br/&gt;身份 = WG peer 映射（隧道即凭证），公网无法到达 endpoint；&lt;br/&gt;provider key 客户端永远拿不到（keyless）。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=left;spacingLeft=8;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="40" y="440" width="320" height="80" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

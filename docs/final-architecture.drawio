@@ -1,0 +1,101 @@
+<mxfile host="app.diagrams.net" agent="compose-repo-netbird-branch" version="24.0.0" type="device">
+  <diagram name="netbird-public-access-sanitized" id="pubaccess1">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="ext-peer" value="&lt;b&gt;外部 peer（员工 / agent）&lt;/b&gt;&lt;br/&gt;URL: https://&amp;lt;管理面域名&amp;gt;（无端口，内外网一致）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="240" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="ext-guest" value="&lt;b&gt;访客浏览器（免客户端）&lt;/b&gt;&lt;br/&gt;https://&amp;lt;服务子域&amp;gt;.example.com" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="40" y="160" width="240" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="zone-vps" value="公网 VPS 入口（仅 L4 转发 + 访客终结，不处理 gRPC）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#d6b656;dashed=1;verticalAlign=top;fontSize=12;fontColor=#b09030" vertex="1" parent="1">
+          <mxGeometry x="360" y="40" width="340" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="sni-router" value="&lt;b&gt;L4 SNI 路由器 :443&lt;/b&gt;&lt;br/&gt;按 TLS ClientHello SNI 分流，纯 TCP 透传不终结：&lt;br/&gt;① 管理面域名 → 边界防火墙:10443（TLS 端到端）&lt;br/&gt;② 服务子域泛域名 → 本机访客终结端&lt;br/&gt;③ 其余流量 → VPS 本机既有业务（不变）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="380" y="70" width="300" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="caddy" value="&lt;b&gt;访客终结反代 :8003&lt;/b&gt;（通配证书终结）&lt;br/&gt;→ 本机访客 proxy :8444" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="380" y="190" width="300" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="pubproxy" value="&lt;b&gt;公网 proxy 容器&lt;/b&gt;（访客入口，内嵌 WG client）&lt;br/&gt;→ WireGuard → 内网 routing peer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=6;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="380" y="260" width="300" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="zone-fw" value="公司边界防火墙（静态公网 IP；NetBird client 兼 routing peer）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#b85450;dashed=1;verticalAlign=top;fontSize=12;fontColor=#b85450" vertex="1" parent="1">
+          <mxGeometry x="760" y="40" width="300" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="nat" value="&lt;b&gt;WAN 端口映射&lt;/b&gt;：TCP 10443→内网 443（管理面）｜TCP+UDP 9443（relay）｜UDP 3479（STUN）｜UDP 51821（agent proxy，可选）&lt;br/&gt;WAN 放行：UDP 51820（routing peer 自身 P2P）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=6;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="775" y="70" width="270" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="routing-peer" value="&lt;b&gt;routing peer&lt;/b&gt;（WG 51820）&lt;br/&gt;Networks 发布内网网段 + 资源域名；&lt;br/&gt;ACL 管控内网 DNS / 服务授权" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;align=left;spacingLeft=6;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="775" y="180" width="270" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="zone-d1" value="部署主机（内网控制面，compose 项目 netbird）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#82b366;dashed=1;verticalAlign=top;fontSize=12;fontColor=#82b366" vertex="1" parent="1">
+          <mxGeometry x="760" y="300" width="300" height="270" as="geometry" />
+        </mxCell>
+        <mxCell id="traefik" value="&lt;b&gt;traefik :443&lt;/b&gt;（固定证书，TLS 终点）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="775" y="330" width="270" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="server" value="&lt;b&gt;netbird-server&lt;/b&gt;（management+signal+dashboard）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="775" y="390" width="270" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="relay" value="&lt;b&gt;relay+STUN 容器&lt;/b&gt; 9443 tcp/udp · 3479/udp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="775" y="450" width="270" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="privproxy" value="&lt;b&gt;私有 proxy&lt;/b&gt;（agent network，overlay only）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="775" y="510" width="270" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="int-peer" value="&lt;b&gt;内网 peer&lt;/b&gt;&lt;br/&gt;split-horizon DNS：同一域名直连内网 443；&lt;br/&gt;断外网时管理面仍可用" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="460" y="420" width="230" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="vlanres" value="&lt;b&gt;内网资源&lt;/b&gt;&lt;br/&gt;服务器 / 办公网段 / 内部 DNS&lt;br/&gt;（经 routing peer 发布 + ACL 授权）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="460" y="520" width="230" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="notes" value="&lt;b&gt;要点（脱敏版）&lt;/b&gt;&lt;br/&gt;· 公网/内网 split-horizon DNS 用同一组域名，端口全隐含&lt;br/&gt;· 外部管理面：peer→VPS(L4 透传)→边界:10443→traefik（TLS 端到端）&lt;br/&gt;· 数据面：P2P 打洞优先，relay:9443 兜底（不经 VPS）&lt;br/&gt;· 访客链路：browser→VPS:443 终结→公网 proxy→WG→routing peer→内网资源&lt;br/&gt;· agent 流量全程 WG 隧道，不经任何公网入口" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=left;spacingLeft=8;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="40" y="520" width="360" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" value="① 管理面 TCP 透传" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="ext-peer" target="sni-router">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="管理面 → 边界:10443" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="sni-router" target="nat">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="访客 HTTPS" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6c8ebf;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="ext-guest" target="caddy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="SNI: 服务子域 → :8003" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6c8ebf;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="sni-router" target="caddy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value=":8444 本机" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6c8ebf;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="caddy" target="pubproxy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="⑤ WireGuard 隧道" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="pubproxy" target="routing-peer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="③ P2P / ④ relay:9443（不经 VPS）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;strokeWidth=2;dashed=1;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="ext-peer" target="routing-peer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="映射 10443→443" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6c8ebf;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="nat" target="traefik">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" value="→ server / relay / privproxy" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="traefik" target="server">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" value="② 内网直连 :443" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="int-peer" target="traefik">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" value="路由发布 + 授权流量" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff" edge="1" parent="1" source="routing-peer" target="vlanres">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
