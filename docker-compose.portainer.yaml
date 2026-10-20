@@ -23,7 +23,7 @@ name: authentik
 
 services:
   server:
-    image: ${JCR_REGISTRY}/ghcr/goauthentik/server:2026.8.3
+    image: ${JCR_REGISTRY}/ghcr/goauthentik/server:2026.8.4
     env_file: !reset null
     # 全局 SMTP 透传（见文件头第 7 条）；587 用 USE_TLS、465 用 USE_SSL，勿同开
     environment:
@@ -66,7 +66,7 @@ services:
       - "traefik.http.routers.authentikhttp.middlewares=http2https"
 
   worker:
-    image: ${JCR_REGISTRY}/ghcr/goauthentik/server:2026.8.3
+    image: ${JCR_REGISTRY}/ghcr/goauthentik/server:2026.8.4
     env_file: !reset null
     # 与 server 相同的全局 SMTP 透传（实际发信多由 worker 执行）
     environment:
