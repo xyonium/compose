@@ -120,10 +120,9 @@ services:
         type: volume
         volume: {}
       - read_only: true
-        source: ${NETBIRD_CERT_DIR}
+        source: /home/runner/work/compose/compose/${NETBIRD_CERT_DIR}
         target: /wildcard-certs
-        type: volume
-        volume: {}
+        type: bind
   relay:
     container_name: netbird-relay
     environment:
@@ -154,10 +153,9 @@ services:
     restart: unless-stopped
     volumes:
       - read_only: true
-        source: ${NETBIRD_CERT_DIR}
+        source: /home/runner/work/compose/compose/${NETBIRD_CERT_DIR}
         target: /certs
-        type: volume
-        volume: {}
+        type: bind
       - source: relay_data
         target: /data
         type: volume
