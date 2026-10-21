@@ -1,0 +1,219 @@
+name: Sync firecrawl compose
+
+# 让 `firecrawl` orphan 分支与上游 firecrawl/firecrawl 保持同步（分支 2026-10 安全清洗
+# 重建后：域名/registry 主机名一律 env 模板化，仓库任何文件不得含真实域名/主机名/IP）：
+#   1. docker-compose.upstream.yaml  <- 上游原样拷贝（bot 维护）
+#   2. docker-compose.yaml           <- 与 docker-compose.portainer.yaml 的预合并产物，
+#                                       4 个 firecrawl 系上游镜像钉 digest（--no-interpolate
+#                                       保留 ${...} 模板，bot 生成，部署平台项目 env 注入：
+#                                       FIRECRAWL_DOMAIN / JCR_REGISTRY / MINERU_BASE_URL 等；
+#                                       3 个自研镜像由分支上各自 build workflow 钉版，不在此处）
+# 全部自定义只放 docker-compose.portainer.yaml——另两个文件永远不要手改。
+# 定时任务只跑默认分支，所以本文件放 main，checkout/推送的目标是 firecrawl 分支。
+
+on:
+  # ⚠️ 定时刻意未启用：启用方法与项目迁移状态见分支 README「同步机制」节。
+  # （与 sync-sub2api / sync-authentik / sync-netbird 各错开 15 分钟，避免并发推不同分支互相踩脚）
+  # schedule:
+  #   - cron: "42 3 5 * *" # 每月 5 日 03:42 UTC（北京 11:42）
+  workflow_dispatch:
+    inputs:
+      pin_mode:
+        description: 'digest 策略：latest=解析上游当前最新（升级通道）；keep=保留合并产物里既有 digest（只验证合并不升级）'
+        required: true
+        default: 'latest'
+        type: choice
+        options: ['latest', 'keep']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: firecrawl-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      PIN_MODE: ${{ inputs.pin_mode || 'latest' }}
+    steps:
+      - name: Check out firecrawl branch
+        uses: actions/checkout@v4
+        with:
+          ref: firecrawl
+
+      - name: Fetch latest upstream compose
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/firecrawl/firecrawl/main/docker-compose.yaml \
+            -o docker-compose.upstream.yaml
+
+      - name: Merge, pin image digests and validate
+        run: |
+          set -euo pipefail
+          # --no-interpolate 保留 ${VAR} 模板，由部署平台的项目 env 注入
+          docker compose -f docker-compose.upstream.yaml -f docker-compose.portainer.yaml \
+            config --no-interpolate --quiet
+          docker compose -f docker-compose.upstream.yaml -f docker-compose.portainer.yaml \
+            config --no-interpolate > docker-compose.merged.tmp.yaml
+
+          # 把浮动的 firecrawl 系上游镜像钉到 ghcr 当前 digest（pin_mode=latest）
+          # 或保留合并产物里既有 digest 不动（pin_mode=keep，受控验证用）。
+          # 镜像更新靠 compose diff 驱动：新 digest -> 文件变化 -> 平台重建拉新镜像，
+          # digest 历史留在 git 里可回滚。
+          # 合并产物里镜像行是字面 ${JCR_REGISTRY}/ghcr/firecrawl/...，用 python 做纯
+          # 字面替换，避免 shell/sed 对 ${} 双重转义（netbird/authentik 同款写法）。
+          #（mirror digest 拉取已在宿主机验证：cache miss 时 mirror 回源拉取。
+          #  此处不探测——GitHub runner 到不了 mirror。）
+          # 正则锚定行尾：镜像名互为前缀（…/firecrawl vs …/firecrawl-mcp-server），
+          # 不锚定短前缀会误伤长名字的镜像行。
+          # 3 个自研服务镜像（ghcr/xyonium/firecrawl-*）不在此钉：它们在两个 compose
+          # 文件里都已带 digest，由分支上各自 build workflow 维护。
+          python3 - <<'PYEOF'
+          import re, subprocess, sys, os
+
+          PINS = [
+              ('${JCR_REGISTRY}/ghcr/firecrawl/firecrawl',            'ghcr.io/firecrawl/firecrawl:latest'),
+              ('${JCR_REGISTRY}/ghcr/firecrawl/playwright-service',   'ghcr.io/firecrawl/playwright-service:latest'),
+              ('${JCR_REGISTRY}/ghcr/firecrawl/nuq-postgres',         'ghcr.io/firecrawl/nuq-postgres:latest'),
+              ('${JCR_REGISTRY}/ghcr/firecrawl/firecrawl-mcp-server', 'ghcr.io/firecrawl/firecrawl-mcp-server:latest'),
+          ]
+          pin_mode = os.environ.get('PIN_MODE', 'latest')
+          assert pin_mode in ('latest', 'keep'), pin_mode
+
+          t = open('docker-compose.merged.tmp.yaml').read()
+          # pin_mode=keep 的「保留」指向旧生成品 docker-compose.yaml——portainer
+          # 手改层本来就不带 digest（那是 bot 的活），本步刚 merge 出来的产物
+          # 上游行只剩 :latest——读旧生成品才能拿到「上次 sync 的钉版」。
+          prev = open('docker-compose.yaml').read() if os.path.exists('docker-compose.yaml') else ''
+          for lit, ref in PINS:
+              pat = re.compile(re.escape(lit) + r'(:[A-Za-z0-9_.-]+)?(@sha256:[0-9a-f]{64})?(?=\s*$)', re.M)
+              # prev 文件曾被一个已修的 bug 污染（'lit' @@sha256:... 双 AT）：检查 prev 时
+              # 放宽到也匹配这种情况，把第二个（合法）digest 捞回来；写入产物由下游
+              # strict 断言兜底不会带 '@@'。
+              pat_prev = re.compile(re.escape(lit) + r'(:[A-Za-z0-9_.-]+)?(?:@+sha256:[0-9a-f]{64})?(?=\s*$)', re.M)
+              m = pat.search(t)
+              if not m:
+                  print(f'::error::image line not found in merged config: {lit}')
+                  sys.exit(1)
+              if pin_mode == 'keep':
+                  prev_m = pat_prev.search(prev)
+                  if not prev_m or '@sha256:' not in prev_m.group(0):
+                      print(f'::error::pin_mode=keep 但旧 docker-compose.yaml 里 {lit} 无 digest')
+                      sys.exit(1)
+                  dm = re.search(r'sha256:[0-9a-f]{64}', prev_m.group(0))
+                  digest = dm.group(0)
+                  t, n = pat.subn(f'{lit}@{digest}', t)
+                  if n != 1:
+                      print(f'::error::keep pin back-write matched {n} (expect 1)')
+                      sys.exit(1)
+                  print(f'keep {lit}@{digest}')
+                  continue
+              r = subprocess.run(['docker', 'buildx', 'imagetools', 'inspect', ref,
+                                  '--format', '{{.Manifest.Digest}}'],
+                                 capture_output=True, text=True)
+              digest = r.stdout.strip()
+              if not digest.startswith('sha256:'):
+                  print(f'::error::empty digest for {ref}: {r.stdout!r} {r.stderr!r}')
+                  sys.exit(1)
+              t, n = pat.subn(f'{lit}@{digest}', t)
+              if n != 1:
+                  print(f'::error::pin failed for {lit}: matched {n} (expect 1)')
+                  sys.exit(1)
+              print(f'pinned {lit}@{digest}')
+          open('docker-compose.merged.tmp.yaml', 'w').write(t)
+          # 钉版总数恒等 7：4 上游 firecrawl 系 + 3 自研（继承自 portainer 层）
+          n = t.count('@sha256:')
+          if n != 7:
+              print(f'::error::expected 7 pinned images in merged config, got {n}')
+              sys.exit(1)
+          print(f'pin_mode={pin_mode}: 7 pinned images OK')
+          PYEOF
+
+          # 反向断言优先于正向哨兵：清洗后的产物不得含真实域名/证书解析器
+          #（正向哨兵可能被注释行骗过——netbird 教训）
+          for bad in \
+            "certresolver" \
+            "myresolver" \
+            "tls.domains" \
+            "env_file" ; do
+            grep -qF "$bad" docker-compose.merged.tmp.yaml && {
+              echo "::error::merged config unexpectedly contains '$bad'"
+              exit 1
+            }
+          done
+
+          # 哨兵检查：上游若改了我们 override 依赖的东西（比如重命名 service），
+          # 大声失败而不是把坏配置部署上去。
+          #（只用短 token——生成文件会折叠长行；含 ${} 的 needle 必须单引号，
+          #  否则 set -u 下被 shell 展开成 unbound variable；grep -qF 纯字面）
+          for needle in \
+            "container_name: firecrawl" \
+            "container_name: firecrawl-mcp" \
+            "container_name: firecrawl-research-proxy" \
+            "container_name: firecrawl-pdf-ocr" \
+            "container_name: firecrawl-papers-service" \
+            "RESEARCH_PROXY_URL" \
+            '${JCR_REGISTRY}/ghcr/firecrawl/firecrawl' \
+            '${JCR_REGISTRY}/ghcr/xyonium/firecrawl-papers-service' \
+            'Host(`${FIRECRAWL_DOMAIN}`)' \
+            'tls=true' \
+            "http2https" \
+            "mcp-legacy-to-v2" \
+            '${MINERU_BASE_URL}' \
+            "reverse-proxy" \
+            "traefik.enable" \
+            "harness.js" \
+            "llmExtract.js" \
+            "pdf-ocr:3200/runpod/v2" \
+            "start_period: 30s" \
+            "retries: 12"; do
+            grep -qF "$needle" docker-compose.merged.tmp.yaml || {
+              echo "::error::merged config missing '$needle' — upstream changed something our override relies on"
+              exit 1
+            }
+          done
+          mv docker-compose.merged.tmp.yaml docker-compose.yaml
+
+          # 结构 smoke test：YAML 可解析 + 11 服务 + 7 钉版 + env 模板保留。
+          #（不跑 `docker compose config` 做最终校验——对齐 netbird/authentik 范式：
+          #  python 三件套足够，且对 runner 环境零假设）
+          python3 - <<'PYEOF'
+          import yaml, sys
+          d = yaml.safe_load(open('docker-compose.yaml'))
+          expect = {'api', 'firecrawl-mcp', 'foundationdb', 'foundationdb-init',
+                    'nuq-postgres', 'pdf-ocr', 'playwright-service', 'rabbitmq',
+                    'redis', 'research-proxy', 'papers-service'}
+          got = set(d.get('services', {}))
+          assert got == expect, f"services mismatch: {sorted(got ^ expect)}"
+          t = open('docker-compose.yaml').read()
+          missing = [v for v in ('${JCR_REGISTRY}', '${FIRECRAWL_DOMAIN}',
+                                 '${MINERU_BASE_URL}', '${PARSE_UPLOAD_REF_SECRET',
+                                 '${GITHUB_TOKENS') if v not in t]
+          assert not missing, f"missing env templates: {missing}"
+          assert t.count('@sha256:') == 7, f"expected 7 pinned images, got {t.count('@sha256:')}"
+          hc = d['services']['rabbitmq']['healthcheck']
+          assert str(hc.get('retries')) == '12', f"rabbitmq healthcheck drift: {hc}"
+          print('merged structure OK: yaml parses, 11 services, env templates intact, 7 images pinned')
+          PYEOF
+
+      - name: Secret/sensitive leakage gate
+        run: |
+          set -euo pipefail
+          # 总闸：任何真实域名/标识串都不应出现在仓库任何文件里
+          #（占位域名 firecrawl.example.com 是允许的；
+          #  pattern 用 [s] 自排除写法防本文件自匹配——见 sub2api/authentik 同款）
+          ! git grep -niE '[s]avorcare|[h]enhaoji' || {
+            echo "::error::仓库文件残留真实域名——清洗机制被破坏"; exit 1; }
+          echo "leakage gate OK"
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docker-compose.upstream.yaml docker-compose.yaml
+          if git diff --cached --quiet; then
+            echo "Upstream unchanged, nothing to do."
+          else
+            git commit -m "sync: upstream compose + image digests ($(date -u +%F), pin_mode=${PIN_MODE:-latest})"
+            git push origin firecrawl
+          fi

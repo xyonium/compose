@@ -1,0 +1,309 @@
+name: Sync netbird compose
+
+# 让 `netbird` orphan 分支与上游官方安装脚本保持同步（分支 2026-10 安全清洗重建后：
+# 域名/私仓/证书路径一律 env 模板化，仓库任何文件不得含真实域名）：
+#   1. docker-compose.upstream.yaml       <- 脚本 option 1（外部 traefik）渲染原样产物
+#                                            （渲染域名用占位 netbird.your-domain.example，天然脱敏）
+#   2. docker-compose.upstream-proxy.yaml <- 脚本 option 0+proxy 渲染后 yq 提取的 proxy 片段
+#                                            （端口绑定收敛 127.0.0.1，仅作参考件）
+#   3. config.yaml / dashboard.env / proxy.env <- 渲染参考件（占位域名；密钥/token 洗成占位符）
+#   4. docker-compose.yaml                <- 三文件预合并产物，4 个 netbirdio 镜像钉 digest
+#                                            （--no-interpolate 保留 ${...} 模板，bot 生成，
+#                                             部署平台项目 env 注入：NETBIRD_DOMAIN / JCR_REGISTRY /
+#                                             NETBIRD_CERT_DIR / NB_PROXY_TOKEN / NB_RELAY_AUTH_SECRET）
+# 全部自定义只放 docker-compose.portainer.yaml——其余文件永远不要手改。
+# 定时任务只跑默认分支，所以本文件放 main，checkout/推送的目标是 netbird 分支。
+
+on:
+  # ⚠️ 定时刻意未启用：启用方法——取消下面两行注释。
+  # （与 sync-firecrawl / sync-sub2api / sync-authentik 各错开 15 分钟，避免并发推不同分支互相踩脚）
+  # schedule:
+  #   - cron: "27 4 5 * *" # 每月 5 日 04:27 UTC（北京 12:27）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: netbird-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out netbird branch
+        uses: actions/checkout@v4
+        with:
+          ref: netbird
+
+      - name: Render upstream artifacts from official installer script
+        run: |
+          set -euo pipefail
+          curl -fsSL https://github.com/netbirdio/netbird/releases/latest/download/getting-started.sh \
+            -o /tmp/nb-gs.sh
+          # 去掉末尾唯一入口 init_environment，source 后只调渲染函数——
+          # 不碰 docker daemon、不起容器、不等待就绪（域名指向生产机，等待循环会死等）
+          sed -i 's/^init_environment$//' /tmp/nb-gs.sh
+          ! grep -q "^init_environment$" /tmp/nb-gs.sh || {
+            echo "::error::entrypoint not stripped"; exit 1; }
+          # 上游若重构脚本结构（函数改名/流程变化），这里大声失败而不是产出坏文件
+          ( set +u; source /tmp/nb-gs.sh
+            for fn in initialize_default_values configure_domain configure_reverse_proxy \
+                      generate_configuration_files render_proxy_env; do
+              type "$fn" >/dev/null || { echo "::error::missing function $fn"; exit 1; }
+            done )
+
+          # 第一次渲染：option 1（现有 traefik）。CERTRESOLVER 留空 → 只生成 tls=true，
+          # 即固定证书风格；域名用占位（脱敏，override 里同 key 覆盖为 ${NETBIRD_DOMAIN} 模板）
+          ( set +u; source /tmp/nb-gs.sh
+            export NETBIRD_DOMAIN=netbird.your-domain.example NETBIRD_NON_INTERACTIVE=true
+            export NETBIRD_REVERSE_PROXY_TYPE=1 NETBIRD_TRAEFIK_EXTERNAL_NETWORK=reverse-proxy
+            export NETBIRD_TRAEFIK_ENTRYPOINT=websecure NETBIRD_TRAEFIK_CERTRESOLVER=
+            initialize_default_values; configure_domain; configure_reverse_proxy
+            mkdir -p /tmp/nb-base && cd /tmp/nb-base && generate_configuration_files )
+          test "$(grep -c certresolver /tmp/nb-base/docker-compose.yml)" = 0
+          test "$(grep -cE '^  traefik:' /tmp/nb-base/docker-compose.yml)" = 0
+
+          # 第二次渲染：option 0 + proxy（LE email 必填，值只落在被丢弃的内建 traefik 里）
+          ( set +u; source /tmp/nb-gs.sh
+            export NETBIRD_DOMAIN=netbird.your-domain.example NETBIRD_NON_INTERACTIVE=true
+            export NETBIRD_REVERSE_PROXY_TYPE=0 NETBIRD_ENABLE_PROXY=true \
+                   NETBIRD_LETSENCRYPT_EMAIL=ops@your-domain.example
+            initialize_default_values; configure_domain; configure_reverse_proxy
+            mkdir -p /tmp/nb-full && cd /tmp/nb-full && generate_configuration_files
+            PROXY_TOKEN=__SET_ME__ render_proxy_env > proxy.env )
+          # 只提取 proxy 服务与其证书卷（网络由 override 重定向到 reverse-proxy，不提取）
+          yq eval '{"services": {"proxy": .services.proxy},
+                    "volumes": {"netbird_proxy_certs": .volumes.netbird_proxy_certs}}' \
+            /tmp/nb-full/docker-compose.yml > docker-compose.upstream-proxy.yaml
+          # 参考件端口收敛为 loopback（上游渲染的 0.0.0.0 明文不该入库，真实映射在 override）
+          sed -i -E 's#^(\s+- )51820:51820/udp#\1127.0.0.1:51820:51820/udp#' \
+            docker-compose.upstream-proxy.yaml
+          for needle in "netbirdio/reverse-proxy" "51820" "netbird_proxy_certs" "HostSNI"; do
+            grep -q "$needle" docker-compose.upstream-proxy.yaml || {
+              echo "::error::proxy fragment missing '$needle' — 上游改了 proxy 定义结构"; exit 1; }
+          done
+
+          cp /tmp/nb-base/docker-compose.yml docker-compose.upstream.yaml
+          cp /tmp/nb-base/dashboard.env dashboard.env
+          cp /tmp/nb-base/config.yaml config.yaml
+          cp /tmp/nb-full/proxy.env proxy.env
+          # config.yaml 密钥脱敏：3 个随机密钥 → 占位符（密钥不进 git，
+          # 真实文件由分支 scripts/bootstrap-config.py <真实域名> 生成后灌命名卷）
+          sed -i -E 's/(authSecret: )"[^"]*"/\1"__GENERATE_AT_DEPLOY__"/;
+                     s/(sessionCookieEncryptionKey: )"[^"]*"/\1"__GENERATE_AT_DEPLOY__"/;
+                     s/(encryptionKey: )"[^"]*"/\1"__GENERATE_AT_DEPLOY__"/' config.yaml
+          test "$(grep -c __GENERATE_AT_DEPLOY__ config.yaml)" = 3
+          ! grep -qE '"[A-Za-z0-9+/]{40,}=?"' config.yaml || {
+            echo "::error::config.yaml 疑似残留未脱敏密钥"; exit 1; }
+
+      - name: Check env parity between rendered references and override
+        run: |
+          set -euo pipefail
+          # override 用 env_file: !reset null + 内联 environment 替代上游 env_file；
+          # 域名相关键的渲染值是占位域名，override 侧是 ${NETBIRD_DOMAIN} 模板——
+          # 比对前先把渲染值里的占位域名替换成模板。上游若加/改/删变量，这里大声失败。
+          python3 - <<'PYEOF'
+          import sys, yaml
+
+          def parse_env(path):
+              out = {}
+              for line in open(path):
+                  line = line.strip()
+                  if not line or line.startswith('#'):
+                      continue
+                  k, _, v = line.partition('=')
+                  out[k.strip()] = v.strip()
+              return out
+
+          class CL(yaml.SafeLoader): pass
+          CL.add_multi_constructor('!', lambda l, s, n: None)
+          override = yaml.load(open('docker-compose.portainer.yaml'), Loader=CL)
+          svc = override['services']
+          fails = []
+
+          # dashboard：渲染键必须全部内联；域名键允许占位域名→模板替换后相等；
+          # 内联只允许多出 AGENT_NETWORK_ENABLED
+          DOM_TPL_D = {'NETBIRD_MGMT_API_ENDPOINT', 'NETBIRD_MGMT_GRPC_API_ENDPOINT',
+                       'AUTH_AUTHORITY'}
+          rendered = parse_env('dashboard.env')
+          inline = dict(svc['dashboard'].get('environment') or {})
+          for k, v in rendered.items():
+              exp = v.replace('netbird.your-domain.example', '${NETBIRD_DOMAIN}') if k in DOM_TPL_D else v
+              if k not in inline:
+                  fails.append(f'dashboard: rendered key {k} missing in override inline env')
+              elif inline[k] != exp:
+                  fails.append(f'dashboard: {k} drift: expected {exp!r} inline={inline[k]!r}')
+          for k in set(inline) - set(rendered) - {'NETBIRD_AGENT_NETWORK_ENABLED'}:
+              fails.append(f'dashboard: unexpected extra inline key {k}')
+
+          # proxy：刻意差异白名单（值覆盖 / 刻意缺席 / 刻意新增 / 域名模板化）
+          rendered = parse_env('proxy.env')
+          inline = dict(svc['proxy'].get('environment') or {})
+          value_overrides = {'NB_PROXY_TOKEN', 'NB_PROXY_ACME_CERTIFICATES',
+                             'NB_PROXY_PROXY_PROTOCOL',
+                             'NB_PROXY_CERTIFICATE_DIRECTORY'}  # → /wildcard-certs
+          dom_templ = {'NB_PROXY_DOMAIN'}  # 渲染值=占位域名，inline=${NETBIRD_DOMAIN}
+          absent_allowed = {'NB_PROXY_ACME_CHALLENGE_TYPE',  # ACME 关闭后无意义
+                            'NB_PROXY_TRUSTED_PROXIES'}      # pp-v2 关闭后无意义
+          extra_allowed = {'NB_PROXY_PRIVATE', 'NB_PROXY_WG_PORT',
+                           'NB_PROXY_CERTIFICATE_FILE', 'NB_PROXY_CERTIFICATE_KEY_FILE'}
+          for k, v in rendered.items():
+              if k not in inline:
+                  if k not in absent_allowed:
+                      fails.append(f'proxy: rendered key {k} missing in override inline env')
+              elif k in value_overrides:
+                  pass  # 值覆盖白名单，跳过相等断言
+              else:
+                  exp = v.replace('netbird.your-domain.example', '${NETBIRD_DOMAIN}') if k in dom_templ else v
+                  if inline[k] != exp:
+                      fails.append(f'proxy: {k} drift: expected {exp!r} inline={inline[k]!r}')
+          for k in set(inline) - set(rendered) - extra_allowed:
+              fails.append(f'proxy: unexpected extra inline key {k}')
+
+          if fails:
+              print('::error::env parity failed（上游 env 模板漂移，同步 override 并更新白名单）：')
+              for f in fails:
+                  print('::error::  ' + f)
+              sys.exit(1)
+          print('env parity OK')
+          PYEOF
+
+      - name: Merge, pin image digests and validate
+        run: |
+          set -euo pipefail
+          # --no-interpolate 保留 ${...} 模板（NETBIRD_DOMAIN / JCR_REGISTRY /
+          # NETBIRD_CERT_DIR / NB_PROXY_TOKEN / NB_RELAY_AUTH_SECRET），由部署平台项目 env 注入
+          docker compose -f docker-compose.upstream.yaml -f docker-compose.upstream-proxy.yaml \
+            -f docker-compose.portainer.yaml config --no-interpolate --quiet
+          docker compose -f docker-compose.upstream.yaml -f docker-compose.upstream-proxy.yaml \
+            -f docker-compose.portainer.yaml config --no-interpolate > docker-compose.merged.tmp.yaml
+
+          # 钉 4 个镜像 digest（netbirdio 套件 latest 浮动 tag；runner 访问不了私服 mirror，
+          # 从 docker.io 解析后写回 ${JCR_REGISTRY} 镜像行。
+          # 合并产物里是字面 ${JCR_REGISTRY}/docker/<repo>，用 python 做纯字面替换，
+          # 避免 shell/sed 对 ${} 双重转义的老坑）
+          python3 - <<'PYEOF'
+          import subprocess, sys
+          t = open('docker-compose.merged.tmp.yaml').read()
+          for repo in ['netbirdio/netbird-server', 'netbirdio/dashboard',
+                       'netbirdio/reverse-proxy', 'netbirdio/relay']:
+              r = subprocess.run(
+                  ['docker', 'buildx', 'imagetools', 'inspect', f'{repo}:latest',
+                   '--format', '{{.Manifest.Digest}}'],
+                  capture_output=True, text=True)
+              digest = r.stdout.strip()
+              if not digest.startswith('sha256:'):
+                  print(f'::error::empty digest for {repo}: {r.stdout!r} {r.stderr!r}')
+                  sys.exit(1)
+              lit = '${JCR_REGISTRY}/docker/' + repo
+              # 干掉该行已有 tag/digest 后缀，统一写成 image@digest
+              import re
+              pattern = re.escape(lit) + r'(:[A-Za-z0-9_.-]+)?(@sha256:[0-9a-f]{64})?(?=\s*$)'
+              t, n = re.subn(pattern, f'{lit}@{digest}', t, flags=re.M)
+              if n != 1:
+                  print(f'::error::pin failed for {lit}: matched {n} (expect 1)')
+                  sys.exit(1)
+              open('docker-compose.merged.tmp.yaml', 'w').write(t)
+          pins = t.count('@sha256:')
+          if pins != 4:
+              print(f'::error::expected 4 pinned images, got {pins}')
+              sys.exit(1)
+          print(f'pinned {pins} images OK')
+          PYEOF
+
+          # 合并产物本身不得携带真实/占位域名（全部应被 override 覆盖为 env 模板）
+          grep -qF 'netbird.your-domain.example' docker-compose.merged.tmp.yaml && {
+            echo "::error::merged config carries literal domain (override label/env coverage broken)"
+            exit 1
+          }
+
+          # 哨兵检查：上游若改了我们 override 依赖的东西，大声失败而不是部署坏配置。
+          #（只用短 token——生成文件会折叠长行；grep -F 纯字面，避开 $ 转义问题）
+          for needle in \
+            "name: netbird" \
+            'Host(`${NETBIRD_DOMAIN}`)' \
+            "container_name: netbird-server" \
+            "container_name: netbird-dashboard" \
+            "container_name: netbird-proxy" \
+            "container_name: netbird-relay" \
+            "management.ProxyService/" \
+            '${JCR_REGISTRY}/docker/netbirdio' \
+            '${NETBIRD_CERT_DIR}' \
+            "traefik.enable" \
+            "http2https" \
+            "reverse-proxy" \
+            "type: bind" \
+            "netbird_data" \
+            "netbird_config" \
+            "netbird_proxy_certs" \
+            "relay_data" \
+            'NB_PROXY_TOKEN: ${NB_PROXY_TOKEN}' \
+            'NB_AUTH_SECRET: ${NB_RELAY_AUTH_SECRET}' \
+            'rels://relay.${NETBIRD_DOMAIN}:9443' \
+            "NB_TLS_CERT_FILE" \
+            "NETBIRD_AGENT_NETWORK_ENABLED" \
+            "NB_PROXY_PRIVATE" \
+            "3479" \
+            "9443" \
+            "51821"; do
+            grep -qF "$needle" docker-compose.merged.tmp.yaml || {
+              echo "::error::merged config missing '$needle' — upstream changed something our override relies on"
+              exit 1
+            }
+          done
+          # 反向断言：密钥 bind 挂载、内建 traefik、certresolver、SNI 通配、
+          # PROXY protocol、env_file、ONLY 模式都不得出现在合并产物里
+          for bad in \
+            "./config.yaml" \
+            "netbird-traefik" \
+            "certresolver" \
+            'HostSNI(`*`)' \
+            "pp-v2" \
+            "env_file" \
+            "NETBIRD_AGENT_NETWORK_ONLY"; do
+            grep -qF "$bad" docker-compose.merged.tmp.yaml && {
+              echo "::error::merged config unexpectedly contains '$bad'"
+              exit 1
+            }
+          done
+          mv docker-compose.merged.tmp.yaml docker-compose.yaml
+          # 结构 smoke test：YAML 可解析 + 镜像都已 pin + 5 个 env 模板都保留。
+          #（不能跑 `docker compose config`——它会对 bind 源路径做存在性检查，
+          #  而 $NETBIRD_CERT_DIR 是部署时的真实路径，runner 上无对应物）
+          python3 - <<'PYEOF'
+          import yaml, sys
+          d = yaml.safe_load(open('docker-compose.yaml'))
+          assert set(d.get('services', {})) == {'dashboard','netbird-server','relay','proxy'}, \
+              f"services mismatch: {list(d.get('services', {}))}"
+          t = open('docker-compose.yaml').read()
+          missing = [v for v in ('${NETBIRD_DOMAIN}','${JCR_REGISTRY}','${NETBIRD_CERT_DIR}',
+                                 '${NB_PROXY_TOKEN}','${NB_RELAY_AUTH_SECRET}') if v not in t]
+          assert not missing, f"missing env templates: {missing}"
+          assert t.count('@sha256:') == 4, "expected 4 pinned images"
+          assert 'netbird.your-domain.example' not in t and 's[a-z]v[a-z]rc[a-z]re' not in t, \
+              "literal sensitive string in merged output"
+          print('merged structure OK: yaml parses, 5 env templates intact, 4 images pinned')
+          PYEOF
+
+      - name: Secret/sensitive leakage gate
+        run: |
+          set -euo pipefail
+          # 总闸：任何真实域名/拓扑串都不应出现在仓库任何文件里
+          #（占位域名 netbird.your-domain.example / *.example.com 是允许的）
+          ! git grep -niE 's[a-z]v[a-z]rc[a-z]re|h[a-z]nh[a-z]o[a-z]i' || {
+            echo "::error::仓库文件残留真实域名——清洗机制被破坏"; exit 1; }
+          echo "leakage gate OK"
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docker-compose.upstream.yaml docker-compose.upstream-proxy.yaml \
+                  config.yaml dashboard.env proxy.env docker-compose.yaml
+          if git diff --cached --quiet; then
+            echo "Upstream unchanged, nothing to do."
+          else
+            git commit -m "sync: upstream compose + image digests ($(date -u +%F))"
+            git push origin netbird
+          fi

@@ -1,0 +1,195 @@
+name: Sync sub2api compose
+
+# 让 `sub2api` orphan 分支与上游 Wei-Shaw/sub2api 保持同步（分支 2026-10 安全清洗
+# 重建后：域名/registry 主机名一律 env 模板化，仓库任何文件不得含真实域名/主机名）：
+#   1. docker-compose.upstream.yaml  <- 上游 deploy/docker-compose.yml 原样拷贝（bot 维护）
+#   2. .env.example                  <- 上游 deploy/.env.example 原样拷贝（bot 维护）
+#   3. docker-compose.yaml           <- 与 docker-compose.portainer.yaml 的预合并产物，
+#                                       weishaw/sub2api 钉 digest（--no-interpolate 保留
+#                                       ${...} 模板，bot 生成，部署平台项目 env 注入：
+#                                       SUB2API_DOMAIN / JCR_REGISTRY + 既有凭据变量）
+# 全部自定义只放 docker-compose.portainer.yaml——另三个文件永远不要手改。
+# 定时任务只跑默认分支，所以本文件放 main，checkout/推送的目标是 sub2api 分支。
+
+on:
+  # ⚠️ 定时刻意未启用：启用方法——取消下面两行注释。
+  # （与 sync-firecrawl / sync-authentik / sync-netbird 各错开 15 分钟，避免并发推不同分支互相踩脚）
+  # schedule:
+  #   - cron: "57 3 5 * *" # 每月 5 日 03:57 UTC（北京 11:57）
+  workflow_dispatch:
+    inputs:
+      pin_mode:
+        description: 'digest 策略：latest=解析上游当前最新（升级通道）；keep=保留合并产物里既有 digest（只验证合并不升级）'
+        required: true
+        default: 'latest'
+        type: choice
+        options: ['latest', 'keep']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sub2api-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      PIN_MODE: ${{ inputs.pin_mode || 'latest' }}
+    steps:
+      - name: Check out sub2api branch
+        uses: actions/checkout@v4
+        with:
+          ref: sub2api
+
+      - name: Fetch latest upstream compose and env reference
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/docker-compose.yml \
+            -o docker-compose.upstream.yaml
+          # .env.example 也随同步原样更新，分支内即可查全部变量，不用翻上游
+          curl -fsSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/.env.example \
+            -o .env.example
+
+      - name: Merge, pin image digest and validate
+        run: |
+          set -euo pipefail
+          # --no-interpolate 保留 ${VAR} 模板，由部署平台的项目 env 注入
+          docker compose -f docker-compose.upstream.yaml -f docker-compose.portainer.yaml \
+            config --no-interpolate --quiet
+          docker compose -f docker-compose.upstream.yaml -f docker-compose.portainer.yaml \
+            config --no-interpolate > docker-compose.merged.tmp.yaml
+
+          # 只钉主程序镜像：pin_mode=latest 解析 weishaw/sub2api:latest 当前 digest，
+          # pin_mode=keep 保留旧生成品里既有 digest（不升级只验证）。
+          # postgres:18-alpine / redis:8-alpine 是带版本号的稳定第三方镜像，刻意浮动不钉。
+          # 镜像更新靠 compose diff 驱动：新 digest -> 文件变化 -> 平台重建拉新镜像，
+          # digest 历史留在 git 里可回滚。
+          #（合并产物里镜像行是字面 ${JCR_REGISTRY}/docker/weishaw/sub2api，
+          #  用 python 做纯字面替换，避免 shell/sed 对 ${} 双重转义——
+          #  netbird/authentik/firecrawl 同款写法）
+          python3 - <<'PYEOF'
+          import re, subprocess, sys, os
+
+          lit = '${JCR_REGISTRY}/docker/weishaw/sub2api'
+          ref = 'weishaw/sub2api:latest'
+          pin_mode = os.environ.get('PIN_MODE', 'latest')
+          assert pin_mode in ('latest', 'keep'), pin_mode
+
+          t = open('docker-compose.merged.tmp.yaml').read()
+          pat = re.compile(re.escape(lit) + r'(:[A-Za-z0-9_.-]+)?(@sha256:[0-9a-f]{64})?(?=\s*$)', re.M)
+          m = pat.search(t)
+          if not m:
+              print('::error::image line not found in merged config (override image drift?)')
+              sys.exit(1)
+          if pin_mode == 'keep':
+              # 「保留」指向旧生成品 docker-compose.yaml——portainer 手改层本来就不带
+              # digest（那是 bot 的活），本步刚 merge 出来的产物只剩 :latest。
+              prev = open('docker-compose.yaml').read() if os.path.exists('docker-compose.yaml') else ''
+              prev_m = pat.search(prev)
+              if not prev_m or '@sha256:' not in prev_m.group(0):
+                  print('::error::pin_mode=keep 但旧 docker-compose.yaml 里无 digest')
+                  sys.exit(1)
+              digest = re.search(r'sha256:[0-9a-f]{64}', prev_m.group(0)).group(0)
+          else:
+              r = subprocess.run(['docker', 'buildx', 'imagetools', 'inspect', ref,
+                                  '--format', '{{.Manifest.Digest}}'],
+                                 capture_output=True, text=True)
+              digest = r.stdout.strip()
+              if not digest.startswith('sha256:'):
+                  print(f'::error::empty digest for {ref}: {r.stdout!r} {r.stderr!r}')
+                  sys.exit(1)
+          t, n = pat.subn(f'{lit}@{digest}', t)
+          if n != 1:
+              print(f'::error::pin failed for {lit}: matched {n} (expect 1)')
+              sys.exit(1)
+          open('docker-compose.merged.tmp.yaml', 'w').write(t)
+          n = t.count('@sha256:')
+          if n != 1:
+              print(f'::error::expected 1 pinned image in merged config, got {n}')
+              sys.exit(1)
+          print(f'pin_mode={pin_mode}: pinned {lit}@{digest}')
+          PYEOF
+
+          # 反向断言优先于正向哨兵：清洗后的产物不得含 certresolver / 宿主端口映射
+          #（正向哨兵可能被注释行骗过——netbird 教训）
+          for bad in \
+            "certresolver" \
+            "myresolver" \
+            "tls.domains" \
+            "published" ; do
+            grep -qF "$bad" docker-compose.merged.tmp.yaml && {
+              echo "::error::merged config unexpectedly contains '$bad'"
+              exit 1
+            }
+          done
+
+          # 哨兵检查：上游若改了我们 override 依赖的东西，大声失败而不是部署坏配置。
+          #（只用短 token——生成文件会折叠长行；含 ${} 的 needle 必须单引号，
+          #  否则 set -u 下被 shell 展开成 unbound variable；grep -qF 纯字面；
+          #  container_name 精确归属由下方 smoke test 的 python 断言负责）
+          for needle in \
+            "name: sub2api" \
+            'Host(`${SUB2API_DOMAIN}`)' \
+            '${JCR_REGISTRY}/docker/weishaw/sub2api' \
+            '${JCR_REGISTRY}/docker/postgres' \
+            '${JCR_REGISTRY}/docker/redis' \
+            '${POSTGRES_PASSWORD:?' \
+            "PGDATA" \
+            "sub2api_data" \
+            "postgres_data" \
+            "redis_data" \
+            "sub2api-network" \
+            "reverse-proxy" \
+            "traefik.enable" \
+            "tls=true" \
+            "http2https" \
+            "AUTO_SETUP=true" \
+            "container_name: sub2api"; do
+            grep -qF "$needle" docker-compose.merged.tmp.yaml || {
+              echo "::error::merged config missing '$needle' — upstream changed something our override relies on"
+              exit 1
+            }
+          done
+          mv docker-compose.merged.tmp.yaml docker-compose.yaml
+
+          # 结构 smoke test：YAML 可解析 + 3 服务 + 1 钉版 + env 模板保留。
+          #（不跑 `docker compose config` 做最终校验——对齐 netbird/authentik/firecrawl
+          #  范式：python 三件套足够，且对 runner 环境零假设）
+          python3 - <<'PYEOF'
+          import yaml, sys
+          d = yaml.safe_load(open('docker-compose.yaml'))
+          assert set(d.get('services', {})) == {'postgres', 'redis', 'sub2api'}, \
+              f"services mismatch: {list(d.get('services', {}))}"
+          assert d['services']['sub2api'].get('container_name') == 'sub2api', \
+              "sub2api container_name drift"
+          assert not d['services']['sub2api'].get('ports'), \
+              "sub2api ports !reset drift — host port mapping is back"
+          t = open('docker-compose.yaml').read()
+          missing = [v for v in ('${JCR_REGISTRY}', '${SUB2API_DOMAIN}',
+                                 '${POSTGRES_PASSWORD') if v not in t]
+          assert not missing, f"missing env templates: {missing}"
+          assert t.count('@sha256:') == 1, f"expected 1 pinned image, got {t.count('@sha256:')}"
+          print('merged structure OK: yaml parses, 3 services, env templates intact, 1 image pinned')
+          PYEOF
+
+      - name: Secret/sensitive leakage gate
+        run: |
+          set -euo pipefail
+          # 总闸：任何真实域名/标识串都不应出现在仓库任何文件里
+          #（占位域名 sub2api.example.com / *.example.com 是允许的；
+          #  pattern 用 [s] 自排除写法，与其他分支 workflow 同款）
+          ! git grep -niE '[s]avorcare|[h]enhaoji' || {
+            echo "::error::仓库文件残留真实域名——清洗机制被破坏"; exit 1; }
+          echo "leakage gate OK"
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docker-compose.upstream.yaml .env.example docker-compose.yaml
+          if git diff --cached --quiet; then
+            echo "Upstream unchanged, nothing to do."
+          else
+            git commit -m "sync: upstream compose + image digests ($(date -u +%F), pin_mode=${PIN_MODE:-latest})"
+            git push origin sub2api
+          fi

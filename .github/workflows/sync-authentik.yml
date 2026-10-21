@@ -1,0 +1,157 @@
+name: Sync authentik compose
+
+# 让 `authentik` orphan 分支与上游官方安装文件保持同步（分支 2026-10 安全清洗重建后：
+# 域名/registry 主机名一律 env 模板化，仓库任何文件不得含真实域名/主机名）：
+#   1. docker-compose.upstream.yaml  <- https://goauthentik.io/docker-compose.yml 原样拷贝（bot 维护）
+#   2. docker-compose.yaml           <- 与 docker-compose.portainer.yaml 的预合并产物，
+#                                       goauthentik/server 钉 digest（--no-interpolate 保留
+#                                       ${...} 模板，bot 生成，部署平台项目 env 注入：
+#                                       AUTHENTIK_DOMAIN / JCR_REGISTRY + 既有凭据/SMTP 变量）
+# 全部自定义只放 docker-compose.portainer.yaml——另两个文件永远不要手改。
+# 定时任务只跑默认分支，所以本文件放 main，checkout/推送的目标是 authentik 分支。
+
+on:
+  # ⚠️ 定时刻意未启用：启用方法——取消下面两行注释。
+  # （与 sync-firecrawl / sync-sub2api / sync-netbird 各错开 15 分钟，避免并发推不同分支互相踩脚）
+  # schedule:
+  #   - cron: "12 4 5 * *" # 每月 5 日 04:12 UTC（北京 12:12）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: authentik-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out authentik branch
+        uses: actions/checkout@v4
+        with:
+          ref: authentik
+
+      - name: Fetch latest upstream compose
+        run: |
+          curl -fsSL https://goauthentik.io/docker-compose.yml \
+            -o docker-compose.upstream.yaml
+
+      - name: Merge, pin image digest and validate
+        run: |
+          set -euo pipefail
+          # --no-interpolate 保留 ${VAR} 模板，由部署平台的项目 env 注入
+          docker compose -f docker-compose.upstream.yaml -f docker-compose.portainer.yaml \
+            config --no-interpolate --quiet
+          docker compose -f docker-compose.upstream.yaml -f docker-compose.portainer.yaml \
+            config --no-interpolate > docker-compose.merged.tmp.yaml
+
+          # 只钉主程序镜像（server/worker 同一镜像，合并产物里出现 2 次）；
+          # postgres:16-alpine 是带版本号的稳定第三方镜像，刻意浮动不钉。
+          # tag 写死在 override 里（升级手改），这里从合并产物提取当前 tag，
+          # 按 ghcr 原名解析 digest 后钉回 ${JCR_REGISTRY} 镜像行。
+          #（合并产物里是字面 ${JCR_REGISTRY}/ghcr/...，用 python 做纯字面替换，
+          #  避免 shell/sed 对 ${} 双重转义——netbird 分支同款写法）
+          python3 - <<'PYEOF'
+          import re, subprocess, sys
+          t = open('docker-compose.merged.tmp.yaml').read()
+          lit = '${JCR_REGISTRY}/ghcr/goauthentik/server'
+
+          m = re.search(re.escape(lit) + r':([A-Za-z0-9_.-]+)', t)
+          if not m:
+              print('::error::cannot extract tag from merged config (override tag drift?)')
+              sys.exit(1)
+          tag = m.group(1)
+
+          r = subprocess.run(
+              ['docker', 'buildx', 'imagetools', 'inspect',
+               f'ghcr.io/goauthentik/server:{tag}', '--format', '{{.Manifest.Digest}}'],
+              capture_output=True, text=True)
+          digest = r.stdout.strip()
+          if not digest.startswith('sha256:'):
+              print(f'::error::empty digest for goauthentik/server:{tag}: {r.stdout!r} {r.stderr!r}')
+              sys.exit(1)
+
+          # 干掉该行已有 tag/digest 后缀，统一写成 image@digest；server+worker 共 2 处
+          pattern = re.escape(lit) + r'(:[A-Za-z0-9_.-]+)?(@sha256:[0-9a-f]{64})?(?=\s*$)'
+          t, n = re.subn(pattern, f'{lit}@{digest}', t, flags=re.M)
+          if n != 2:
+              print(f'::error::pin failed for {lit}: matched {n} (expect 2)')
+              sys.exit(1)
+          open('docker-compose.merged.tmp.yaml', 'w').write(t)
+          if t.count('@sha256:') != 2:
+              print(f'::error::expected 2 pinned images, got {t.count("@sha256:")}')
+              sys.exit(1)
+          print(f'pinned {tag}@{digest} (x2) OK')
+          PYEOF
+
+          # 哨兵检查：上游若改了我们 override 依赖的东西，大声失败而不是部署坏配置。
+          #（只用短 token——生成文件会折叠长行；含 ${} 的 needle 必须单引号，
+          #  否则 set -u 下被 shell 展开成 unbound variable；grep -qF 纯字面）
+          for needle in \
+            "name: authentik" \
+            'Host(`${AUTHENTIK_DOMAIN}`)' \
+            '${JCR_REGISTRY}/ghcr/goauthentik/server' \
+            '${JCR_REGISTRY}/docker/library/postgres' \
+            '${PG_PASS:?' \
+            "AUTHENTIK_SECRET_KEY" \
+            "AUTHENTIK_EMAIL__HOST" \
+            "AUTHENTIK_WEB__WORKERS" \
+            "AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS" \
+            "traefik.enable" \
+            "http2https" \
+            "reverse-proxy" \
+            "docker.sock"; do
+            grep -qF "$needle" docker-compose.merged.tmp.yaml || {
+              echo "::error::merged config missing '$needle' — upstream changed something our override relies on"
+              exit 1
+            }
+          done
+          # 反向断言：env_file（已 !reset）与上游宿主端口映射不得出现在合并产物里
+          for bad in \
+            "env_file" \
+            "9443" \
+            "published"; do
+            grep -qF "$bad" docker-compose.merged.tmp.yaml && {
+              echo "::error::merged config unexpectedly contains '$bad'"
+              exit 1
+            }
+          done
+          mv docker-compose.merged.tmp.yaml docker-compose.yaml
+
+          # 结构 smoke test：YAML 可解析 + 镜像都已 pin + env 模板都保留。
+          #（不跑 `docker compose config` 做最终校验——对齐 netbird 范式：
+          #  python 三件套足够，且对 runner 环境零假设）
+          python3 - <<'PYEOF'
+          import yaml, sys
+          d = yaml.safe_load(open('docker-compose.yaml'))
+          assert set(d.get('services', {})) == {'postgresql', 'server', 'worker'}, \
+              f"services mismatch: {list(d.get('services', {}))}"
+          t = open('docker-compose.yaml').read()
+          missing = [v for v in ('${JCR_REGISTRY}', '${AUTHENTIK_DOMAIN}',
+                                 '${PG_PASS', '${AUTHENTIK_SECRET_KEY') if v not in t]
+          assert not missing, f"missing env templates: {missing}"
+          assert t.count('@sha256:') == 2, "expected 2 pinned images"
+          print('merged structure OK: yaml parses, env templates intact, 2 images pinned')
+          PYEOF
+
+      - name: Secret/sensitive leakage gate
+        run: |
+          set -euo pipefail
+          # 总闸：任何真实域名/标识串都不应出现在仓库任何文件里
+          #（占位域名 authentik.your-domain.example / *.example.com 是允许的）
+          ! git grep -niE 's[a-z]v[a-z]rc[a-z]re|h[a-z]nh[a-z]o[a-z]i' || {
+            echo "::error::仓库文件残留真实域名——清洗机制被破坏"; exit 1; }
+          echo "leakage gate OK"
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docker-compose.upstream.yaml docker-compose.yaml
+          if git diff --cached --quiet; then
+            echo "Upstream unchanged, nothing to do."
+          else
+            git commit -m "sync: upstream compose + image digests ($(date -u +%F))"
+            git push origin authentik
+          fi
