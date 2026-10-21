@@ -423,7 +423,7 @@ services:
     environment:
       MINERU_BACKEND: ${MINERU_BACKEND:-pipeline}
       MINERU_BASE_URL: ${MINERU_BASE_URL}
-    image: ${JCR_REGISTRY}/ghcr/xyonium/firecrawl-pdf-ocr@sha256:b6b03e1111e9fef66064130707a9efc81604f4e0fe49b077e5bcb5b696644e1e
+    image: ${JCR_REGISTRY}/ghcr/xyonium/firecrawl-pdf-ocr@sha256:f29ebd525ce65fe27427ab9e355609fe541985044f810a4df8908e5dd885f9c6
     networks:
       backend: null
     restart: unless-stopped
