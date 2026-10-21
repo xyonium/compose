@@ -53,6 +53,7 @@
 | `AUTHENTIK_SECRET_KEY` | **必填**（上游 `:?` 断言），authentik 加密密钥（session/凭据加密），丢失 = 所有加密数据不可解，务必备份；`openssl rand -base64 60 \| tr -d '\n'` 生成 | |
 | `PG_DB` / `PG_USER` | 可选，默认都是 `authentik` | |
 | `AUTHENTIK_WEB__WORKERS` | 可选，admin 界面并行加载优化（默认 4，与部署主机 LXC 核数联动） | `4` |
+| `AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS` | 可选，可信反向代理 CIDR 列表（逗号分隔）。默认仅含内网段；经公网反代回源时追加反代节点公网 IP/32 以保留真实客户端 IP | `127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fe80::/10,::1/128,203.0.113.10/32` |
 | `AUTHENTIK_EMAIL__*` | 可选，全局 SMTP 八变量（找回密码/通知邮件；界面无设置页只能 env，已做透传）。587 用 `USE_TLS=true`、465 用 `USE_SSL=true`，勿同开；配好执行 `docker compose exec worker ak test_email <邮箱>` 验证 | |
 
 ### 初始管理员
