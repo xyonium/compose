@@ -298,16 +298,31 @@ services:
           //     (upstream shipped them blank; the tool descriptions carry most
           //     of the semantics, so keep these to what a caller cannot infer
           //     from the name — no apostrophes here, see patch 9 note).
-          //     Anchors are the unique zod param blocks.
+          //     Anchors are the unique zod param blocks; (\w+) capture makes
+          //     the patch alias-agnostic so tsup z-aliasing (z6, z7, z9, z12)
+          //     does not silently drift (root cause of 2026-10-21 dry-run
+          //     pinned latest sync revert; upstream alias had moved z6 to z9).
           {
             const before = c;
             c = c.replace(
-              "seed_ids: z6.array(z6.string()).min(1).max(10),\n      intent: z6.string().min(1),\n      mode: z6.enum([\"similar\", \"citers\", \"references\"]).optional(),\n      k: z6.number().int().min(1).max(500).optional(),",
-              "seed_ids: z6.array(z6.string()).min(1).max(10).describe(\"1-10 paper IDs; the first is the seed, the rest are anchors.\"),\n      intent: z6.string().min(1).describe(\"What the related papers should be about; used to rank candidates.\"),\n      mode: z6.enum([\"similar\", \"citers\", \"references\"]).optional().describe(\"similar (default): co-citation/bibliographic coupling; citers: papers citing the seed; references: papers the seed cites.\"),\n      k: z6.number().int().min(1).max(500).optional().describe(\"Number of ranked papers to return (default 10).\"),"
+              /seed_ids: (\w+)\.array\(\1\.string\(\)\)\.min\(1\)\.max\(10\)(?!\.describe)/,
+              "seed_ids: $1.array($1.string()).min(1).max(10).describe(\"1-10 paper IDs; the first is the seed, the rest are anchors.\")"
             );
             c = c.replace(
-              "question: z6.string().min(1),\n      k: z6.number().int().min(1).max(50).optional()",
-              "question: z6.string().min(1).describe(\"What to look for in the full text; passages are selected by relevance to it.\"),\n      k: z6.number().int().min(1).max(50).optional()"
+              /intent: (\w+)\.string\(\)\.min\(1\)(?!\.describe)/,
+              "intent: $1.string().min(1).describe(\"What the related papers should be about; used to rank candidates.\")"
+            );
+            c = c.replace(
+              /mode: (\w+)\.enum\(\[\"similar\", \"citers\", \"references\"\]\)\.optional\(\)(?!\.describe)/,
+              "mode: $1.enum([\"similar\", \"citers\", \"references\"]).optional().describe(\"similar (default): co-citation/bibliographic coupling; citers: papers citing the seed; references: papers the seed cites.\")"
+            );
+            c = c.replace(
+              /k: (\w+)\.number\(\)\.int\(\)\.min\(1\)\.max\(500\)\.optional\(\)(?!\.describe)/g,
+              "k: $1.number().int().min(1).max(500).optional().describe(\"Number of ranked papers to return (default 10).\")"
+            );
+            c = c.replace(
+              /question: (\w+)\.string\(\)\.min\(1\)(?!\.describe)/g,
+              "question: $1.string().min(1).describe(\"What to look for in the full text; passages are selected by relevance to it.\")"
             );
             if (c !== before) { modified = true; logs.push("research-param-desc"); }
           }
