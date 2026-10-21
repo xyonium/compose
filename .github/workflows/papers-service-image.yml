@@ -1,0 +1,129 @@
+name: Build papers-service image
+
+# papers-service 源码随 firecrawl 分支走（compose 仓库）（部署单分支），所以镜像构建
+# 工作流也放这个分支（push 触发要求工作流文件存在于被推送的分支上）。
+# 构建后把新 digest 钉回两个 compose 文件——compose diff 驱动部署平台更新，
+# 与上游同步机器人同一思路。paths 过滤不含 compose 文件，钉版提交不会自激。
+#
+# 钉版是纯字面替换：compose 里镜像行是 ${JCR_REGISTRY}/ghcr/xyonium/...@sha256:...
+# 模板（registry 主机名走项目 env，不入库），用 python 避免 shell/sed 对 ${} 的
+# 双重转义（对齐 main 上 sync-firecrawl.yml / sync-authentik.yml 的写法）。
+#
+# tool.py 来自另一个仓库（xyonium/paper-search）：构建时先把 main 解析成
+# commit sha 传给 PAPER_SEARCH_REF，让 ADD 层缓存在 tool.py 更新时自然失效。
+# tool.py 单独更新不会触发本工作流——需要升级时用 workflow_dispatch 手动跑一把。
+
+on:
+  push:
+    branches: [firecrawl]
+    paths:
+      - "papers-service/**"
+      - ".github/workflows/papers-service-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: papers-service-image
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: firecrawl
+
+      - name: Resolve paper-search ref
+        id: psref
+        run: |
+          sha=$(git ls-remote https://github.com/xyonium/paper-search.git refs/heads/main | cut -f1)
+          test -n "$sha"
+          echo "paper-search main = $sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./papers-service
+          push: true
+          build-args: |
+            PAPER_SEARCH_REF=${{ steps.psref.outputs.sha }}
+          tags: |
+            ghcr.io/xyonium/firecrawl-papers-service:latest
+            ghcr.io/xyonium/firecrawl-papers-service:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/xyonium/compose
+            org.opencontainers.image.description=paper-search-mcp replacement: /papers/* upstream for research-proxy (search via paper-search tool.py direct adapters)
+            org.opencontainers.image.licenses=MIT
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Pin digest in compose files
+        run: |
+          set -euo pipefail
+          python3 - <<'PIN_EOF'
+          import re, subprocess, sys
+          # 纯字面模板串——单引号 heredoc 下无 shell 展开；re.escape 后做 EOL 锚定
+          #（镜像名互为前缀，不锚定行尾会误伤长名字的镜像行）
+          lit = '${JCR_REGISTRY}/ghcr/xyonium/firecrawl-papers-service'
+          r = subprocess.run(
+              ['docker', 'buildx', 'imagetools', 'inspect',
+               'ghcr.io/xyonium/firecrawl-papers-service:latest', '--format', '{{.Manifest.Digest}}'],
+              capture_output=True, text=True)
+          digest = r.stdout.strip()
+          if not digest.startswith('sha256:'):
+              print(f'::error::empty digest: {r.stdout!r} {r.stderr!r}')
+              sys.exit(1)
+          pat = re.compile(re.escape(lit) + r'(:[A-Za-z0-9_.-]+)?(@sha256:[0-9a-f]{64})?(?=\s*$)', re.M)
+          # portainer 是手改的权威文件，必须命中；merged 由 main 的 sync 工作流
+          # 重生成，过渡期可能还没有模板行——没有就跳过，交给 sync 兜底
+          for f, required in (('docker-compose.portainer.yaml', True),
+                              ('docker-compose.yaml', False)):
+              t = open(f).read()
+              if lit not in t:
+                  if required:
+                      print(f'::error::{f}: image line {lit!r} not found')
+                      sys.exit(1)
+                  print(f'{f}: no template line, skip (sync workflow regenerates)')
+                  continue
+              t, n = pat.subn(f'{lit}@{digest}', t)
+              if n != 1:
+                  print(f'::error::{f}: pin matched {n} (expect 1)')
+                  sys.exit(1)
+              open(f, 'w').write(t)
+              print(f'pinned {f}: {lit}@{digest}')
+          PIN_EOF
+
+      # 总闸在本分支本地工作流里也要跑（git grep 扫描的是本分支工作树，
+      # 本文件自身也在其中——pattern 用 [s] 自排除写法避免自匹配）
+      - name: Secret/sensitive leakage gate
+        run: |
+          set -euo pipefail
+          ! git grep -niE '[s]avorcare|[h]enhaoji' || {
+            echo "::error::仓库文件残留真实域名/标识——清洗机制被破坏"; exit 1; }
+          echo "leakage gate OK"
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docker-compose.portainer.yaml docker-compose.yaml
+          if git diff --cached --quiet; then
+            echo "digest unchanged"
+          else
+            git commit -m "ci: pin papers-service digest ($(date -u +%F) ${GITHUB_SHA:0:7})"
+            # 与 research-proxy-image 并发时可能撞 push：先 rebase 再推
+            git pull --rebase origin firecrawl
+            git push origin firecrawl
+          fi

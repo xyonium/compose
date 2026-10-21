@@ -1,0 +1,394 @@
+# 部署自定义层（compose 仓库 firecrawl 分支）：唯一手改文件。main 上的
+# sync-firecrawl bot 把它与 docker-compose.upstream.yaml 合并、钉 digest
+# 后生成 docker-compose.yaml，部署平台（Arcane）只消费生成品。请勿手动
+# 合并两文件部署——本文件里 api/mcp 等上游镜像不带 digest，会覆盖掉生成品里的钉版。
+services:
+  playwright-service:
+    image: ${JCR_REGISTRY}/ghcr/firecrawl/playwright-service:latest
+    build: !reset null
+    restart: unless-stopped
+    ports:
+      - "3031:3000"
+
+  api:
+    image: ${JCR_REGISTRY}/ghcr/firecrawl/firecrawl
+    build: !reset null
+    restart: unless-stopped
+    container_name: firecrawl
+    networks:
+      - reverse-proxy
+    environment:
+      # research/developer 端点 + research 工具的上游（本栈 research-proxy 服务）。
+      # 设上后 api 才会挂载 /v2/search/research/* 与 /v2/search/developer 路由。
+      RESEARCH_PROXY_URL: "http://research-proxy:3100"
+      # 两阶段 parse 上传（/v2/parse/upload-url → PUT → /v2/parse?uploadRef=）的
+      # ref 签名密钥。本栈 ENV=local，上传走内存 driver，无需 GCS。
+      # 值在部署平台的 stack env 里配，不进 git。
+      PARSE_UPLOAD_REF_SECRET: ${PARSE_UPLOAD_REF_SECRET:-}
+      # PDF 走容器内原生 Rust 提取（firecrawl-rs 已在镜像内），复杂排版质量优于
+      # pdf-parse 兜底；扫描件 fast 模式会明确报 OCR-required。
+      PDF_RUST_EXTRACT_ENABLE: ${PDF_RUST_EXTRACT_ENABLE:-true}
+      # 扫描件 OCR 走本栈 pdf-ocr 适配器（契约=RunPod MU，后端=自托管 MinerU）。
+      # 这两个值只需非空，Bearer 被适配器忽略；URL 由下面的启动 sed 改写。
+      RUNPOD_MU_API_KEY: ${RUNPOD_MU_API_KEY:-local}
+      RUNPOD_MU_POD_ID: ${RUNPOD_MU_POD_ID:-local}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.firecrawl.rule=Host(`${FIRECRAWL_DOMAIN}`)"
+      - "traefik.http.routers.firecrawl.entrypoints=websecure"
+      - "traefik.http.routers.firecrawl.tls=true"
+      - "traefik.http.routers.firecrawlhttp.rule=Host(`${FIRECRAWL_DOMAIN}`)"
+      - "traefik.http.routers.firecrawlhttp.entrypoints=web"
+      - "traefik.http.routers.firecrawlhttp.middlewares=http2https"
+      - "traefik.docker.network=reverse-proxy"
+    command: >
+      sh -c "
+      sed -i 's/getModelLimits(\"gpt-4o-mini\")/getModelLimits(\"gemini-2.5-flash-lite\")/g' /app/dist/src/scraper/scrapeURL/transformers/llmExtract.js
+      && echo '✅ Patched: getModelLimits now uses gemini-2.5-flash-lite (1M input, 65K output)'
+      && sed -i 's#https://api\.runpod\.ai/v2/#http://pdf-ocr:3200/runpod/v2/#g' /app/dist/src/scraper/scrapeURL/engines/pdf/runpodMU.js
+      && echo '✅ Patched: RunPod MU base URL -> pdf-ocr adapter (self-hosted MinerU)'
+      && node dist/src/harness.js --start-docker
+      "
+
+  redis:
+    image: ${JCR_REGISTRY}/docker/redis:alpine
+    restart: unless-stopped
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: ${JCR_REGISTRY}/docker/rabbitmq:3-management
+    restart: unless-stopped
+    # 放宽上游健康检查窗口：全栈同时重建时 RabbitMQ 冷启动实测 ~27s，而上游默认
+    # start_period 5s + retries 3×5s ≈ 20s 就被判 unhealthy，compose 随即中止启动，
+    # api 永远停在 created（2026-09-28 命中）。start_period 只豁免早期失败，
+    # 不影响首次成功即转 healthy 的速度。
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'check_running']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    volumes:
+      - /tmp/firecrawl/rabiitmq:/var/lib/rabbitmq
+
+  nuq-postgres:
+    image: ${JCR_REGISTRY}/ghcr/firecrawl/nuq-postgres:latest
+    build: !reset null
+    restart: unless-stopped
+    volumes:
+      - postgres:/var/lib/postgresql/data
+
+  foundationdb:
+    image: ${JCR_REGISTRY}/docker/foundationdb/foundationdb:7.3.63
+
+  foundationdb-init:
+    image: ${JCR_REGISTRY}/docker/foundationdb/foundationdb:7.3.63
+
+  # PDF OCR 适配器（源码在本分支 pdf-ocr/，详见其 README）。实现 RunPod MU
+  # serverless 契约并转发到自托管 MinerU，让扫描件/图片型 PDF 走自己的 GPU。
+  # api 启动时 sed 把 dist 里硬编码的 api.runpod.ai 改指到本服务；失败一律
+  # 502，api 会降级回容器内 pdf-parse。镜像由 pdf-ocr-image workflow 云端构建钉版。
+  pdf-ocr:
+    image: ${JCR_REGISTRY}/ghcr/xyonium/firecrawl-pdf-ocr@sha256:eef4d102b3aede399e0ac1670d213684b9a6d3d0d0ba36a7a430c40b4d4cee01
+    container_name: firecrawl-pdf-ocr
+    restart: unless-stopped
+    environment:
+      # MinerU 地址无默认（默认即泄漏内网主机名）：项目 env **必填**
+      MINERU_BASE_URL: ${MINERU_BASE_URL}
+      MINERU_BACKEND: ${MINERU_BACKEND:-pipeline}
+    networks:
+      - backend
+
+  # research 上游 shim（源码在本分支 research-proxy/，详见其 README）。
+  # 桥接 papers-service（/papers/* 上游）+ reach-mcp（/reach/read_url，仍在 mcpo）
+  # + GitHub API，实现 cloud-only 的 research papers / similar / read / code search
+  # 端点。纯内部服务，不过 traefik。
+  # 镜像由 .github/workflows/research-proxy-image.yml 构建推 ghcr 并钉 digest 回本文件；
+  # 改代码推本分支即自动出图更新（CE 靠 compose diff 拉新镜像，无需本地 build）。
+  # mcpo 容器（reach-mcp 网关）经 reverse-proxy 网络以名字 mcpo 访问。
+  research-proxy:
+    image: ${JCR_REGISTRY}/ghcr/xyonium/firecrawl-research-proxy@sha256:c9d2c9cc685dc42a15e0c10f68e00453ab31c3f05f9d65bf53df3da3a268326f
+    container_name: firecrawl-research-proxy
+    restart: unless-stopped
+    environment:
+      MCPO_BASE_URL: ${MCPO_BASE_URL:-http://mcpo:8000}
+      # /papers/* 上游（默认指向本栈 papers-service，paper-search-mcp 已退役）；
+      # /reach/read_url 仍走 mcpo 的 reach-mcp。两者缺省回落 MCPO_BASE_URL。
+      PAPERS_BASE_URL: ${PAPERS_BASE_URL:-http://papers-service:3200}
+      REACH_BASE_URL: ${REACH_BASE_URL:-http://mcpo:8000}
+      PAPER_SOURCES: ${PAPER_SOURCES:-arxiv,semantic,pubmed,openalex,crossref,europepmc,dblp,hal,pmc}
+      # 以下密钥在部署平台的 stack env 里配，不进 git：
+      SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
+      GITHUB_TOKENS: ${GITHUB_TOKENS:-}
+    networks:
+      - backend
+      - reverse-proxy
+
+  # paper-search-mcp 的替代（源码在本分支 papers-service/，详见其 README）：
+  # 为 research-proxy 提供 /papers/* 上游——检索直连公开学术 API（镜像构建时打进
+  # paper-search 仓库 tool.py 的全部直连适配器，含 scholar 三级链），read 是轻量
+  # 直连实现，读不了的源 404 由 research-proxy 落 reach-mcp。纯内部服务，不过 traefik。
+  # 镜像由 .github/workflows/papers-service-image.yml 构建推 ghcr 并钉 digest 回本文件；
+  # tool.py 升级后手动 workflow_dispatch 一把即出新镜像。
+  papers-service:
+    image: ${JCR_REGISTRY}/ghcr/xyonium/firecrawl-papers-service@sha256:b365c0e24ad8964b894b4fc90b42f58ddd9fb5d85130e10148594a86c2e77ff1
+    container_name: firecrawl-papers-service
+    restart: unless-stopped
+    environment:
+      # 密钥在部署平台的 stack env 里配，不进 git（与 OWUI tool 同名语义）：
+      SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
+      NCBI_API_KEY: ${NCBI_API_KEY:-}
+      CORE_API_KEY: ${CORE_API_KEY:-}
+      IEEE_APIKEY: ${IEEE_APIKEY:-}
+      ZENODO_ACCESS_TOKEN: ${ZENODO_ACCESS_TOKEN:-}
+      ZHIHUIYA_APIKEY: ${ZHIHUIYA_APIKEY:-}
+      # scholar 链 + dblp Anubis 兜底用的 firecrawl 仍走 mcpo（其 firecrawl 服务
+      # 指向 api-key-rotator → 官方云）；tavily/apify 走 rotator（在 owui 网络上）：
+      FIRECRAWL_BASE_URL: ${FIRECRAWL_BASE_URL:-http://mcpo:8000/firecrawl}
+      TAVILY_BASE_URL: ${TAVILY_BASE_URL:-http://api-key-rotator:8788/tavily}
+      APIFY_ROTATOR_BASE_URL: ${APIFY_ROTATOR_BASE_URL:-http://api-key-rotator:8788/apify}
+      MCPO_API_KEY: ${MCPO_API_KEY:-}
+      # download_with_fallback 的 Unpaywall 请求标识（匿名有配额限制）
+      UNPAYWALL_EMAIL: ${UNPAYWALL_EMAIL:-}
+    networks:
+      - backend
+      - reverse-proxy
+      - owui  # api-key-rotator 所在网络（scholar 链 tier2/3 与 OWUI tool 同路）
+
+  # MCP server（原 stack 270 迁入）。与 api 同栈后走内部网络直连，不再绕公网。
+  # 服务名与容器名统一为 firecrawl-mcp，避免裸名 mcp 与 mcpo 容器在共享网络上撞名。
+  # traefik 规则保持旧路径不变：/v2/mcp 是新版原生端点；/mcp 由
+  # mcp-legacy-to-v2 中间件重写到 /v2/mcp；/sse + /messages 容器仍原生支持，直通。
+  # 标签里的 $$ 是给 compose 部署期插值的转义，部署后 traefik 看到的是 $1。
+  firecrawl-mcp:
+    image: ${JCR_REGISTRY}/ghcr/firecrawl/firecrawl-mcp-server:latest
+    container_name: firecrawl-mcp
+    restart: unless-stopped
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        node -e '
+        const fs = require("fs"), path = require("path");
+        function walk(d) {
+          let r = [];
+          for (const e of fs.readdirSync(d, {withFileTypes: true})) {
+            const f = path.join(d, e.name);
+            if (e.isDirectory()) r = r.concat(walk(f));
+            else if (e.name.endsWith(".js")) r.push(f);
+          }
+          return r;
+        }
+
+        const bang = "**SearXNG !bang:** prefix the query to pick a source category: !science (papers/academic), !it (programming), !general (default web), !news, !images. For academic or research queries ALWAYS prefix with !science instead of adding keywords like \"research paper\" to the query. Example: \"!science continuous glucose monitoring sensor accuracy\".";
+
+        const cleanDesc = "LLM-based cleaning pass that removes residual boilerplate (cookie banners, ads, social widgets, breadcrumbs, comments) that onlyMainContent misses. Preserves headings, lists, tables, code blocks, links. Can combine with onlyMainContent. Auto-skipped (preserving original) if content exceeds model token limit. Recommended to enable for complex structured websites when speed is not critical. If the returned content is unexpectedly short or seems to be missing key content, try disabling this option and re-scraping.";
+
+        let n = 0;
+        for (const f of walk("/app/dist")) {
+          let c = fs.readFileSync(f, "utf8");
+          let modified = false;
+          let logs = [];
+
+          // 1. Insert !bang guidance into the search description, right after the
+          //    operators sentence. Upstream removed the old "**Sources:**" anchor
+          //    (v3.24-ish), so anchor on "the set is non-exhaustive." instead;
+          //    idempotency guard checks the inserted marker itself.
+          //    Escape via JSON.stringify minus the wrapping quotes: since the
+          //    2026-09-28 image the first anchor occurrence sits inside a
+          //    double-quoted .describe("...") in the bundle, so a raw " would
+          //    terminate the string and break the whole file (crash loop).
+          //    \" is harmless in template-literal / single-quoted contexts too.
+          if (!c.includes("**SearXNG !bang:**") && c.includes("the set is non-exhaustive.")) {
+            const bangEsc = JSON.stringify(bang).slice(1, -1);
+            c = c.replace("the set is non-exhaustive.", "the set is non-exhaustive. " + bangEsc);
+            modified = true; logs.push("!bang");
+          }
+
+          // 2. Add onlyCleanContent to schema after onlyMainContent
+          if (!c.includes("onlyCleanContent")) {
+            const nc = c.replace(
+              /(onlyMainContent:\s*)(\w+)\.boolean\(\)\.optional\(\)/g,
+              (m, p, v) => p + v + ".boolean().optional(),onlyCleanContent: " + v + ".boolean().optional().describe(\"" + cleanDesc + "\")"
+            );
+            if (nc !== c) { c = nc; modified = true; logs.push("onlyCleanContent"); }
+          }
+
+          // 3. Change examples: "onlyMainContent": true → "onlyCleanContent": true
+          if (c.includes("onlyCleanContent")) {
+            const nc = c.replace(/"onlyMainContent":\s*true/g, "\"onlyCleanContent\": true");
+            if (nc !== c) { c = nc; modified = true; logs.push("example-clean"); }
+          }
+
+          // 4. Remove feedback text references (tool registration disabled by env var)
+          if (c.includes("firecrawl_search_feedback")) {
+            const before = c;
+            c = c.replace(/\*\*After the search:\*\*[^\n]*\n/g, "");
+            c = c.replace(/ Pass the top-level[^\n]*?firecrawl_search_feedback[^\n]*?results\./g, "");
+            c = c.replace(/ After using search results, call firecrawl_search_feedback[^\n]*?credit\./g, "");
+            if (c !== before) { modified = true; logs.push("feedback-text"); }
+          }
+
+          // 5. categories enum 保留全部四项：github/research/pdf 是 SearXNG 查询改写
+          //    （自托管可用），developer 由本栈 research-proxy 服务兜底。
+          //    research 工具同理（registerResearchTools 不再禁用）——均由
+          //    RESEARCH_PROXY_URL -> research-proxy 提供。
+
+          // 6. Disable monitor tools (cloud-only)
+          if (c.includes("registerMonitorTools") && !c.includes("monitor-disabled")) {
+            const before = c;
+            c = c.replace(/registerMonitorTools\s*\([^)]*\)\s*;/g, "/* monitor-disabled */");
+            if (c !== before) { modified = true; logs.push("monitor-disable"); }
+          }
+
+          // 7. Disable agent + interact tools (cloud-only)
+          {
+            const before = c;
+            c = c.replace(
+              /server\.addTool\((\s*\{\s*name:\s*[\x22\x27]firecrawl_(?:agent|agent_status|interact|interact_stop)[\x22\x27])/g,
+              "(() => {})($1"
+            );
+            if (c !== before) { modified = true; logs.push("agent-interact-disable"); }
+          }
+
+          // 8. Remove agent references from scrape/map descriptions
+          if (c.includes("firecrawl_agent")) {
+            const before = c;
+            c = c.replace(/\n\s*4\.\s*\*\*Use firecrawl_agent:\*\*[^\n]*/g, "");
+            c = c.replace(/\*\*IMPORTANT - Use map before agent:\*\*/g, "**IMPORTANT - Use map to find pages:**");
+            c = c.replace(/This is faster and cheaper than using[^.]*firecrawl_agent[^.]*\.\s*/g, "");
+            c = c.replace(/Only use the agent as a last resort after map\+scrape fails\.\s*/g, "");
+            if (c !== before) { modified = true; logs.push("agent-refs"); }
+          }
+
+          // 9. parse tool: this MCP is a remote deployment — filePath is resolved
+          //    on the MCP container filesystem, so client-local paths always
+          //    ENOENT. Upstream now explains local-vs-hosted generically; what it
+          //    lacks is that THIS deployment is remote plus the concrete endpoint.
+          //    Keep the note short; no backticks or dollar-brace (would break
+          //    the template literal / compose interpolation), no apostrophes
+          //    (would break the single-quoted node -e).
+          if (!c.includes("REMOTE PARSE NOTE") && c.includes("Parse one supported document into markdown")) {
+            c = c.replace(
+              "Parse one supported document into markdown",
+              "REMOTE PARSE NOTE: this MCP server is a remote deployment; filePath is resolved on the server filesystem and caller-local paths fail with ENOENT. To parse a caller-local file, POST it as multipart/form-data to https://" + (process.env.FIRECRAWL_DOMAIN || "firecrawl.example.com") + "/v2/parse (field file, plus an optional options JSON string). Parse one supported document into markdown"
+            );
+            modified = true; logs.push("parse-remote-note");
+          }
+
+          // 10. Disable credit_usage tool (cloud-only): self-hosted api has no
+          //     Autumn billing backend (AUTUMN_SECRET_KEY missing -> 500). The
+          //     tool registration call site is unique; commenting it out drops
+          //     the tool plus its creditUsageOutputSchema cleanly. Upstream has
+          //     no env switch for this (checked all FIRECRAWL_* env reads).
+          if (c.includes("registerUsageTools(server, getClient);")) {
+            c = c.replace(
+              "registerUsageTools(server, getClient);",
+              "/* usage-tools-disabled: no Autumn billing backend in self-host */"
+            );
+            modified = true; logs.push("usage-tools-disable");
+          }
+
+          // 11. Fill the empty .describe() slots on research tool params
+          //     (upstream shipped them blank; the tool descriptions carry most
+          //     of the semantics, so keep these to what a caller cannot infer
+          //     from the name — no apostrophes here, see patch 9 note).
+          //     Anchors are the unique zod param blocks.
+          {
+            const before = c;
+            c = c.replace(
+              "seed_ids: z6.array(z6.string()).min(1).max(10),\n      intent: z6.string().min(1),\n      mode: z6.enum([\"similar\", \"citers\", \"references\"]).optional(),\n      k: z6.number().int().min(1).max(500).optional(),",
+              "seed_ids: z6.array(z6.string()).min(1).max(10).describe(\"1-10 paper IDs; the first is the seed, the rest are anchors.\"),\n      intent: z6.string().min(1).describe(\"What the related papers should be about; used to rank candidates.\"),\n      mode: z6.enum([\"similar\", \"citers\", \"references\"]).optional().describe(\"similar (default): co-citation/bibliographic coupling; citers: papers citing the seed; references: papers the seed cites.\"),\n      k: z6.number().int().min(1).max(500).optional().describe(\"Number of ranked papers to return (default 10).\"),"
+            );
+            c = c.replace(
+              "question: z6.string().min(1),\n      k: z6.number().int().min(1).max(50).optional()",
+              "question: z6.string().min(1).describe(\"What to look for in the full text; passages are selected by relevance to it.\"),\n      k: z6.number().int().min(1).max(50).optional()"
+            );
+            if (c !== before) { modified = true; logs.push("research-param-desc"); }
+          }
+
+          // 12. Disable find_tools (cloud-only): self-hosted api has no
+          //     Alexandria catalogue, every call fails with "Alexandria
+          //     requires an API key on a team with Alexandria access".
+          //     The registration is a single unconditional statement.
+          if (c.includes("server.addTool(findToolsTool);")) {
+            c = c.replace(
+              "server.addTool(findToolsTool);",
+              "/* find-tools-disabled: no Alexandria catalogue in self-host */"
+            );
+            modified = true; logs.push("find-tools-disable");
+          }
+
+          // 13. Strip dead Alexandria guidance from the scrape/search
+          //     descriptions: the paragraphs point at find_tools and the
+          //     alexandria scrape mode, which cannot work self-hosted and
+          //     otherwise lure the model into guaranteed-failure calls.
+          //     Delete whole template paragraphs; anchors verified unique.
+          //     Param-level .describe() mentions are left alone (dead but
+          //     harmless). search-surface variants are /v2/mcp-search only,
+          //     not used here.
+          {
+            const before = c;
+            c = c.replace(
+              "\n\nOn an authenticated session with Alexandria access, \\`firecrawl_search\\` with \\`sources\\` unset and \\`firecrawl_find_tools\\` can discover providers for the same fields across several pages; a matching provider returns typed records in one call. Keyless sessions have no provider matches.\n\nAlexandria mode, on an authenticated session with Alexandria access: \\`alexandria\\` selects catalogued capability execution and is mutually exclusive with \\`url\\`.\n",
+              "\n"
+            );
+            c = c.replace(
+              "\n\n$${ALEXANDRIA_SEARCH_LEAD}\n\nOn an authenticated session, tool matches describe available capabilities; \\`firecrawl_find_tools\\` returns their contracts and \\`firecrawl_scrape\\` with an \\`alexandria\\` body executes a selected capability. Keyless sessions get no Alexandria matches in data.tools.",
+              ""
+            );
+            if (c !== before) { modified = true; logs.push("alexandria-desc-strip"); }
+          }
+
+          if (modified) {
+            fs.writeFileSync(f, c);
+            n++;
+            console.log("Patched [" + logs.join(",") + "]: " + f);
+          }
+        }
+        console.log("Total patched: " + n);
+        ' && exec node dist/index.js
+    expose:
+      - "3000"
+    environment:
+      FIRECRAWL_API_URL: "http://api:3002"
+      # 对外域名透传：启动 patch 的 REMOTE PARSE NOTE 用它写 parse 端点
+      FIRECRAWL_DOMAIN: ${FIRECRAWL_DOMAIN}
+      FIRECRAWL_RETRY_MAX_ATTEMPTS: "10"
+      FIRECRAWL_RETRY_INITIAL_DELAY: "500"
+      FIRECRAWL_NO_SEARCH_FEEDBACK: "true"
+      FIRECRAWL_NO_ENDPOINT_FEEDBACK: "true"
+      HTTP_STREAMABLE_SERVER: "true"
+      HOST: "0.0.0.0"
+    networks:
+      - backend
+      - reverse-proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=reverse-proxy"
+      - "traefik.http.routers.mcp-fc.rule=Host(`${FIRECRAWL_DOMAIN}`) && (PathPrefix(`/v2/mcp`) || PathPrefix(`/mcp`) || PathPrefix(`/sse`) || PathPrefix(`/messages`))"
+      - "traefik.http.routers.mcp-fc.entrypoints=websecure"
+      - "traefik.http.routers.mcp-fc.tls=true"
+      - "traefik.http.routers.mcp-fc.middlewares=mcp-legacy-to-v2"
+      - "traefik.http.routers.mcp-fchttp.rule=Host(`${FIRECRAWL_DOMAIN}`) && (PathPrefix(`/v2/mcp`) || PathPrefix(`/mcp`) || PathPrefix(`/sse`) || PathPrefix(`/messages`))"
+      - "traefik.http.routers.mcp-fchttp.entrypoints=web"
+      - "traefik.http.routers.mcp-fchttp.middlewares=http2https,mcp-legacy-to-v2"
+      - "traefik.http.middlewares.mcp-legacy-to-v2.replacepathregex.regex=^/mcp(/.*)?$$"
+      - "traefik.http.middlewares.mcp-legacy-to-v2.replacepathregex.replacement=/v2/mcp$$1"
+
+networks:
+  reverse-proxy:
+    name: reverse-proxy
+    external: true
+  owui:
+    name: open-webui-nogpu_default
+    external: true
+
+volumes:
+  redis:
+  postgres:
