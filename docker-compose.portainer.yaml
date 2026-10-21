@@ -113,7 +113,7 @@ services:
   # 改代码推本分支即自动出图更新（CE 靠 compose diff 拉新镜像，无需本地 build）。
   # mcpo 容器（reach-mcp 网关）经 reverse-proxy 网络以名字 mcpo 访问。
   research-proxy:
-    image: ${JCR_REGISTRY}/ghcr/xyonium/firecrawl-research-proxy@sha256:b72c0e0158568fc13915d0df21977597895fe53865ead2b7c52e14556136ce5e
+    image: ${JCR_REGISTRY}/ghcr/xyonium/firecrawl-research-proxy@sha256:9d79159b1e5dc94b4213ea4cf5d4c00626d20284dcd15baaf90a9a46b11ee767
     container_name: firecrawl-research-proxy
     restart: unless-stopped
     environment:
