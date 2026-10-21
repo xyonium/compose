@@ -142,6 +142,10 @@ workflow（推 `ghcr.io/xyonium/firecrawl-*`，用户命名空间 package，需�
   overlay 放宽为 start_period 30s / retries 12。
 - **三构建 workflow 并发撞车**：单次 push 同时改 3 个 workflow 文件会三路并发构建，pin-commit
   push 互相拒绝 → 串行 `gh run rerun <id>` 恢复即可（缓存命中，重跑很快）。
+  **注意：workflow 文件自身在各自 paths 过滤器里，改 workflow 的任何一行（哪怕只改
+  gate pattern/注释）都会触发重建**；镜像构建非 bit 可复现（layer 时间戳），digest
+  必然漂移 → pin commit → compose diff → 下次 Arcane sync 会 redeploy 一次同码新镜像。
+  只想改 workflow 而不想要这次空升级时，把改动和镜像升级分开安排。
 - 上游演进方向：nuq 队列引擎引入 FoundationDB 可选后端（默认 pg）；api 容器由
   harness.js 一把梭（无独立 worker 服务）。
 - 研究栈（research-proxy shim 桥接 papers-service + reach-mcp(mcpo) + GitHub API；
