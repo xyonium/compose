@@ -17,9 +17,10 @@ compose/文档/workflow 前先过这一关：
    `*.example.com`（RFC 2606），registry 写 `${JCR_REGISTRY}` 或泛称「私服 mirror」,
    主机名写「部署主机/边界防火墙」。历史文档出现真实域名是旧账，改到就顺手洗掉。
 3. **leakage gate 兜底**：每个 sync workflow 最后必须有
-   `git grep -niE '<真实域名词干>|<其他公司标识>'`（或同类串）失败即拒提交；新分支
-   sync 从 [sync-netbird.yml](.github/workflows/sync-netbird.yml) 抄这一步（实际串
-   在该 workflow 里，别入库进本文档——文档自身也要能过同一 gate）。
+   `git grep -niE '<真实串 pattern>'`（或同类串）失败即拒提交；新分支
+   sync 从 [sync-netbird.yml](.github/workflows/sync-netbird.yml) 抄这一步（真实串
+   在该 workflow 里以**隔位通配混淆 pattern** 形式存在，人眼不可直读、grep 不自匹配；
+   别入库进本文档——文档自身也要能过同一 gate）。
 4. **sync 只走 workflow_dispatch**：项目分支 push **不会**触发任何 GH Action
    （定时全注释，netbird 分支无 build workflow），推送零自动化副作用；要跑 sync 在
    对应 main 分支手动 `gh workflow run sync-<branch>.yml`，跑完看 leakage gate 是否绿。
@@ -73,7 +74,9 @@ firecrawl 分支迁移时的增补教训（2026-10-21）：
    （升级=独立变更事件）。首次手写 merged 产物时沿用部署 digest；sync 工作流加
    `pin_mode` 输入（`latest`=升级通道 / `keep`=保留合并产物既有 digest 只验证合并）。
 9. **leakage gate 写进分支 workflow 时会自匹配**：gate 的 `git grep` 也扫 workflow
-   文件自身，真实串 pattern 必须用 `[s]avorcare` 这类字符类自排除写法。
+   文件自身，pattern 不能是明文——用**隔位通配混淆**写法（如 `x[a-z]y[a-z]z...`，
+   每个间隙字符换成 `[a-z]`），人眼读不出真串、regex 也匹配不到自身文本。
+   早期用过 `[x]yz` 单字符类自排除，虽然能过 grep 但人眼仍可读，已全面废弃。
 10. **钉版回写对 `docker-compose.yaml` 要幂等从容**：build workflow 钉自研镜像时，
     merged 产物可能过渡性没有该镜像的模板行（清洗重建时手写）——assert lit in text
     只对 portainer（权威文件）硬失败，merged 缺行则交给 main 的 sync 重建兜底。

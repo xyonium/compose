@@ -283,8 +283,8 @@ jobs:
           assert t.count('@sha256:') == 4, "expected 4 pinned images"
           import re as _re
           assert 'netbird.your-domain.example' not in t and \
-              not _re.search(r'[s]avorcare|[h]enhaoji', t, _re.I), \
-              "literal sensitive string in merged output (char-class pattern: no self-match)"
+              not _re.search(r's[a-z]v[a-z]rc[a-z]re|h[a-z]nh[a-z]o[a-z]i', t, _re.I), \
+              "literal sensitive string in merged output (pattern obfuscated: no readable secret in repo)"
           print('merged structure OK: yaml parses, 5 env templates intact, 4 images pinned')
           PYEOF
 
@@ -293,8 +293,8 @@ jobs:
           set -euo pipefail
           # 总闸：任何真实域名/拓扑串都不应出现在仓库任何文件里
           #（占位域名 netbird.your-domain.example / *.example.com 是允许的；
-          #  pattern 用 [s] 自排除写法，防 workflow 文件自匹配——firecrawl/sub2api 同款）
-          ! git grep -niE '[s]avorcare|[h]enhaoji' || {
+          #  pattern 隔位通配混淆——不含可直读串、不自匹配，四分支同款）
+          ! git grep -niE 's[a-z]v[a-z]rc[a-z]re|h[a-z]nh[a-z]o[a-z]i' || {
             echo "::error::仓库文件残留真实域名——清洗机制被破坏"; exit 1; }
           echo "leakage gate OK"
 

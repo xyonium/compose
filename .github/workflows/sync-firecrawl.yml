@@ -201,8 +201,8 @@ jobs:
           set -euo pipefail
           # 总闸：任何真实域名/标识串都不应出现在仓库任何文件里
           #（占位域名 firecrawl.example.com 是允许的；
-          #  pattern 用 [s] 自排除写法防本文件自匹配——见 sub2api/authentik 同款）
-          ! git grep -niE '[s]avorcare|[h]enhaoji' || {
+          #  pattern 隔位通配混淆——不含可直读串、不自匹配，四分支同款）
+          ! git grep -niE 's[a-z]v[a-z]rc[a-z]re|h[a-z]nh[a-z]o[a-z]i' || {
             echo "::error::仓库文件残留真实域名——清洗机制被破坏"; exit 1; }
           echo "leakage gate OK"
 
