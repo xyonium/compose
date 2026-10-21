@@ -1,0 +1,48 @@
+# 部署平台自定义层：与上游 docker-compose.upstream.yaml 合并使用
+# 合并产物 docker-compose.yaml 由 main 分支的 sync-sub2api.yml 工作流生成
+#（bot 维护，勿手改）；要调整部署只改本文件。
+#
+# 自定义内容（2026-10 安全清洗重建：域名/registry 主机名一律 env 模板化，
+# 仓库任何文件不得含真实域名/主机名，真实值由部署平台项目 env 注入）：
+#   1. 镜像全部走私服 mirror（${JCR_REGISTRY} 的 docker hub 代理，
+#      registry 主机名走项目 env）
+#   2. sub2api 摘掉宿主端口映射，改走 traefik（域名 ${SUB2API_DOMAIN} 走项目 env；
+#      部署主机风格：websecure 入口固定泛域名证书文件，tls=true，无 certresolver）
+#   3. 固定项目名 sub2api，数据卷名不随部署平台项目/stack 名变化
+
+name: sub2api
+
+services:
+  sub2api:
+    image: ${JCR_REGISTRY}/docker/weishaw/sub2api:latest
+    # 不暴露宿主端口（清掉上游的 ${BIND_HOST}:${SERVER_PORT}:8080 映射），
+    # 外部访问走 traefik；容器 8080 经 reverse-proxy 网络可达
+    ports: !reset null
+    networks:
+      # compose 合并语义：与上游的 sub2api-network 合并为两者都挂
+      - reverse-proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=reverse-proxy"
+      # 摘掉宿主端口后 traefik 无从猜测容器端口，显式钉死
+      - "traefik.http.services.sub2api.loadbalancer.server.port=8080"
+      # 域名模板化：真实域名由平台项目 env 注入 ${SUB2API_DOMAIN}
+      - "traefik.http.routers.sub2api.rule=Host(`${SUB2API_DOMAIN}`)"
+      - "traefik.http.routers.sub2api.entrypoints=websecure"
+      # 部署主机用固定证书文件（websecure 入口已配泛域名证书），不写 certresolver
+      - "traefik.http.routers.sub2api.tls=true"
+      - "traefik.http.routers.sub2apihttp.rule=Host(`${SUB2API_DOMAIN}`)"
+      - "traefik.http.routers.sub2apihttp.entrypoints=web"
+      # http2https 中间件在部署主机的 traefik 栈里已定义，直接引用
+      - "traefik.http.routers.sub2apihttp.middlewares=http2https"
+
+  postgres:
+    image: ${JCR_REGISTRY}/docker/postgres:18-alpine
+
+  redis:
+    image: ${JCR_REGISTRY}/docker/redis:8-alpine
+
+networks:
+  reverse-proxy:
+    name: reverse-proxy
+    external: true
