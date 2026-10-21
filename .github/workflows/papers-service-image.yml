@@ -106,11 +106,11 @@ jobs:
           PIN_EOF
 
       # 总闸在本分支本地工作流里也要跑（git grep 扫描的是本分支工作树，
-      # 本文件自身也在其中——pattern 用 [s] 自排除写法避免自匹配）
+      # 本文件自身也在其中——pattern 隔位通配混淆——不含可直读串、不自匹配）
       - name: Secret/sensitive leakage gate
         run: |
           set -euo pipefail
-          ! git grep -niE '[s]avorcare|[h]enhaoji' || {
+          ! git grep -niE 's[a-z]v[a-z]rc[a-z]re|h[a-z]nh[a-z]o[a-z]i' || {
             echo "::error::仓库文件残留真实域名/标识——清洗机制被破坏"; exit 1; }
           echo "leakage gate OK"
 
