@@ -66,6 +66,7 @@ NetBird 全功能自建（VPN 管理 + **Agent Network** Beta）。管理面与 
    python3 bootstrap-config.py <真实域名> config.yaml config.yaml \
      "$(docker network inspect reverse-proxy -f '{{(index .IPAM.Config 0).Subnet}}')"
    # 脚本完成：占位域名全域替换、3 个随机密钥、trustedHTTPProxies 死值替换、
+   # supportedSyncMessageVersions: 0（服务端展开 NetworkMap，兼容 v0.77.x 等旧版客户端）、
    # 追加外部 stuns/relays（stun:relay.<域名>:3479 / rels://relay.<域名>:9443，
    # relays.secret 自动等于 authSecret）
    grep -c GENERATE config.yaml   # 必须为 0 再继续（server 对占位符会 FATL）：

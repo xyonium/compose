@@ -63,10 +63,13 @@ def main():
         assert n == 1, "trustedHTTPProxies 死值 172.30.0.10/32 未命中"
 
     # 4. 外部 STUN/relay（地址由真实域名派生；3479 刻意避开默认 3478 防本机 TURN 冲突）
+    #    + supportedSyncMessageVersions: 0（服务端展开 NetworkMap，兼容 v0.77.x 等旧版客户端
+    #      解码 v0.80+ reverse-proxy 合成策略时的信封协议差异）
     assert "store:" in t, "模板缺少 store: 块——上游模板结构变了，追加层级需人工核对"
     if not t.endswith("\n"):
         t += "\n"
     t += f"""
+  supportedSyncMessageVersions: 0
   stuns:
     - uri: "stun:relay.{domain}:3479"
       proto: "udp"
