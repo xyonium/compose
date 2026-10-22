@@ -224,11 +224,19 @@ services:
           //    silent no-op across npm 3.23.0-3.33.4 and on the pinned deploy
           //    digest. Tombstone kept to preserve patch numbering.
 
-          // 4. (removed 2026-10-21) feedback-text: upstream removed the
-          //    "**After the search:**" / "Pass the top-level" / "After using
-          //    search results" prose lines in 3.23.0 (tool registration stays
-          //    env-disabled via FIRECRAWL_NO_SEARCH_FEEDBACK, verified present
-          //    in 3.33.4). Silent no-op since; tombstone for numbering.
+          // 4. Strip the remaining feedback pointer from the search
+          //    description. The prose trio ("**After the search:**" etc.)
+          //    disappeared upstream in 3.23.0, but the rewrite left one tail
+          //    line pointing at a tool this stack disables via
+          //    FIRECRAWL_NO_SEARCH_FEEDBACK -- a guaranteed-dead pointer.
+          //    Old digest: line absent, no-op by design (A/B verified).
+          if (c.includes("for optional search feedback")) {
+            const nc = c.replace(
+              " Authenticated responses can include an \\`id\\` for optional search feedback.",
+              ""
+            );
+            if (nc !== c) { c = nc; modified = true; logs.push("feedback-pointer-strip"); }
+          }
 
           // 5. categories enum 保留全部四项：github/research/pdf 是 SearXNG 查询改写
           //    （自托管可用），developer 由本栈 research-proxy 服务兜底。
