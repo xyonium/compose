@@ -471,9 +471,16 @@ services:
             //     as the dedicated tool for legal/regulatory questions, a dead
             //     pointer on the live 11-tool surface (same class as the #4
             //     feedback pointer). Strip the sentence; leave the research
-            //     category sentence that follows intact.
+            //     category sentence that follows intact. The [^]{0,600}? span
+            //     bound is load-bearing: the opener wording also appears in
+            //     copies whose own tail sentence upstream removed (FULL_PROFILE,
+            //     ALEXANDRIA_SEARCH_INSTRUCTIONS on 3.33.4), and an unbounded
+            //     [^]*? then runs away 20k+ chars into the next tail, eating
+            //     whole code blocks (observed: SEARCH_PROFILE region and the
+            //     mcp-search tool registration destroyed). Legit copy is ~330
+            //     chars; 600 gives drift headroom, anything longer no-ops.
             c = c.replace(
-              / For a legal or regulatory question,[^]*?before citing current law\./g,
+              / For a legal or regulatory question,[^]{0,600}?before citing current law\./g,
               ""
             );
 
@@ -503,10 +510,20 @@ services:
             //     as a whole with the stripped wording. SEARCH_PROFILE serves
             //     the mcp-search endpoint profile we do not expose, but the
             //     description is still end-user visible via
-            //     firecrawl_search toolDetail=full.
+            //     firecrawl_search toolDetail=full. The replacement text must
+            //     already be the 15j-rewritten wording: any sentence here that
+            //     still matches a 15j needle gets stripped again on a second
+            //     run, breaking restart idempotency (container restart re-runs
+            //     this script on the already-patched dist). The end anchor
+            //     must be the statement terminator + the following var name:
+            //     anchoring on a prose sentence inside the template lets a
+            //     non-greedy [^]*? run away into a later object literal when
+            //     upstream rewords the tail (observed on 3.33.4: the template
+            //     ends with the billing sentence, not the id sentence, so the
+            //     old anchor ate ~200 lines down into a tool registration).
             c = c.replace(
-              /var SEARCH_PROFILE_INSTRUCTIONS = ALEXANDRIA_SEARCH_INSTRUCTIONS \+ ` Firecrawl provides[^]*?Returns result groups in \\`data\\` and an operation \\`id\\`\.\n`,/,
-              "var SEARCH_PROFILE_INSTRUCTIONS = ` Firecrawl provides web, developer, and research search. Use firecrawl_search to find relevant results across the web and specialized indexes. firecrawl_scrape with a url retrieves one supplied page. For a programming question, firecrawl_developer_search searches indexed public repositories, GitHub issues, merged pull requests, READMEs, and code documentation and returns the matched passages, and skills: \"only\" narrows it to agent-skill files; firecrawl_search with categories: [\"developer\"] reaches the same index beside ordinary web results, returning the hits in the web group rather than as passages and offering no skills filter. For a biomedical, life-science, clinical, or arXiv literature question, the firecrawl_research_* tools search the paper index, while categories: [\"research\"] on firecrawl_search filters ordinary web results to research-affiliated websites. Use the firecrawl_research_* tools to search academic and research literature, expand from anchor papers via the citation graph, and read full-text passages from a specific paper. Search and discovery tools are read-only and return ranked results. Billing: web, developer, and research search are billed per request; firecrawl_scrape is billed per retrieved page. Returns result groups in \\`data\\` and an operation \\`id\\`.\n\n`"
+              /var SEARCH_PROFILE_INSTRUCTIONS = ALEXANDRIA_SEARCH_INSTRUCTIONS \+ `[^]*?`;\nvar SEARCH_PROFILE_TOOLS/,
+              "var SEARCH_PROFILE_INSTRUCTIONS = ` Firecrawl provides web, developer, and research search. Use firecrawl_search to find relevant results across the web and specialized indexes. firecrawl_scrape with a url retrieves one supplied page. For a programming question, firecrawl_developer_search searches indexed public repositories, GitHub issues, merged pull requests, READMEs, and code documentation and returns the matched passages, and skills: \"only\" narrows it to agent-skill files; firecrawl_search with categories: [\"developer\"] reaches the same index beside ordinary web results, returning the hits in the web group rather than as passages and offering no skills filter. Use the firecrawl_research_* tools to search academic and research literature, expand from anchor papers via the citation graph, and read full-text passages from a specific paper. Billing: web, developer, and research search are billed per request; firecrawl_scrape is billed per retrieved page. Returns result groups in \\`data\\` and an operation \\`id\\`.\n\n`;\nvar SEARCH_PROFILE_TOOLS"
             );
 
             // 15l. searchQueryIsValid refine error message in the live
