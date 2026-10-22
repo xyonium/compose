@@ -374,6 +374,18 @@ services:
             if (c !== before) { modified = true; logs.push("alexandria-desc-strip-v2"); }
           }
 
+          // 14. Disable gov_search: the upstream tool goes to a US Government
+          //     Index backend that only exists on the firecrawl cloud api --
+          //     self-host has no route for it, every call would 404. Same
+          //     reasoning as #7/#10/#12.
+          if (c.includes("registerGovTools(server, getClient);")) {
+            c = c.replace(
+              "registerGovTools(server, getClient);",
+              "/* gov-tools-disabled: no Government Index backend in self-host */"
+            );
+            modified = true; logs.push("gov-tools-disable");
+          }
+
           // 15. Strip cloud-only guidance from FULL/KEYLESS profile
           //     instructions. The initialize instructions steer the agent more
           //     strongly than any single tool description (read first, every
