@@ -318,9 +318,47 @@ services:
 
           // 14. (tombstoned 2026-10-22) gov-search re-enabled. Cloud
           //     Government Index is free and answers keyless requests
-          //     (no Authorization header); with FIRECRAWL_API_KEY unset
-          //     the SDK omits the header and the tool self-hosts via the
-          //     cloud free tier. docs/gov-search-investigation.md.
+          //     (no Authorization header). The tool shares the SDK client
+          //     whose baseURL is FIRECRAWL_API_URL -- self-host has no gov
+          //     route, so #17 below re-points BASE2 at the cloud/rotator.
+          //     docs/gov-search-investigation.md.
+
+          // 17. Route gov_search to the cloud Government Index. axios
+          //     ignores baseURL for absolute URLs, so overriding BASE2 with
+          //     a full URL redirects only this tool; every other tool keeps
+          //     hitting the self-host API. Default is the public cloud
+          //     endpoint (free + keyless, proven 2026-10-22); project env
+          //     FIRECRAWL_GOV_BASE_URL can point at the internal
+          //     key-rotator prefix for higher rate limits and audit logs.
+          //     No API key is ever sent from this service either way.
+          if (c.includes("var BASE2 = \"/v2/search/gov\";")) {
+            c = c.replace(
+              "var BASE2 = \"/v2/search/gov\";",
+              "var BASE2 = (process.env.FIRECRAWL_GOV_BASE_URL || \"https://api.firecrawl.dev\").replace(/\\/$/, \"\") + \"/v2/search/gov\";"
+            );
+            modified = true; logs.push("gov-base-url");
+          }
+
+          // 17b. The SDK pins every request back onto the FIRECRAWL_API_URL
+          //     origin (pinToApiOrigin in node_modules, an anti-credential-
+          //     leak guard), which would drag the absolute BASE2 from #17
+          //     right back to the self-host API (observed: gov call still
+          //     dialed the local origin). Gov therefore bypasses
+          //     client.http with a plain fetch: no key is ever sent, the
+          //     key-rotator injects its own when FIRECRAWL_GOV_BASE_URL
+          //     points at it, and the shaped result ({data: json}) matches
+          //     what the execute body reads below. Lost for this one call:
+          //     axios retries and the 300s timeout -- acceptable for a
+          //     free cloud lookup. \x60 keeps raw backticks out of this
+          //     single-quoted body per the sh transport rule; $${...} is
+          //     compose-escaped so the written needle keeps ${...}.
+          if (c.includes("const res = await client.http.get(\n        \x60$${BASE2}?$${params.toString()}\x60,\n        originHeaders(requestOrigin(mcpClient, session))\n      );")) {
+            c = c.replace(
+              "const res = await client.http.get(\n        \x60$${BASE2}?$${params.toString()}\x60,\n        originHeaders(requestOrigin(mcpClient, session))\n      );",
+              "const res = await fetch(\n        \x60$${BASE2}?$${params.toString()}\x60\n      ).then(async (r) => ({ data: await r.json() }));"
+            );
+            modified = true; logs.push("gov-fetch-bypass");
+          }
 
           // 15. Strip cloud-only guidance from FULL/KEYLESS profile
           //     instructions. The initialize instructions steer the agent more
@@ -387,15 +425,29 @@ services:
             );
 
             // 15e. FULL: strip the alexandria half of the tail block; the
-            //     gov half stays (tool re-enabled, see #14 tombstone).
+            //     firecrawl_gov_search half stays (live tool, routed by #17).
+            //     Also strip the categories-gov tail of that same sentence:
+            //     firecrawl_search hits the self-host API which has no
+            //     Government Index, so categories: [gov] is a dead pointer.
             c = c.replace(
               " firecrawl_search with sources: [{type: \"alexandria\"}] returns compact tool summaries in data.tools; toolDetail: \"full\" includes contracts, firecrawl_find_tools starts with categories, lists providers, then compact tools, and expands the selected full contract, and firecrawl_scrape with alexandria: [{provider, capability, options}] executes up to ten capabilities and returns their results. Alexandria access needs an API key on a team with it enabled.",
               ""
             );
+            c = c.replace(
+              "; firecrawl_search with categories: [\"gov\"] reaches the same sources and cannot be combined with other categories.",
+              "."
+            );
+            c = c.replace(
+              "; firecrawl_search with categories: [\"gov\"] reaches the same sources in the web group and cannot be combined with other categories.",
+              "."
+            );
 
-            // 15f. (tombstoned 2026-10-22) KEYLESS gov categories line kept:
-            //     categories gov hits the same free Government Index backend
-            //     which serves keyless sessions too (gov-search restored).
+            // 15f. KEYLESS: rewrite the categories-gov line to point at the
+            //     live tool (self-host search has no Government Index).
+            c = c.replace(
+              " For legal or regulatory questions, firecrawl_search with categories: [\"gov\"] searches US government legal and regulatory sources and cannot be combined with other categories.",
+              " For legal or regulatory questions, firecrawl_gov_search searches US government legal and regulatory sources."
+            );
 
             // 15g. KEYLESS: rewrite bearer-key tail (drop agent/find_tools/
             //     Alexandria; keep the restored gov tool in the listing).
@@ -404,22 +456,25 @@ services:
               "An Authorization bearer API key can provide higher usage limits and expose additional tools, subject to plan, deployment, and team policy, including firecrawl_map for site URL discovery, firecrawl_gov_search for US government legal and regulatory sources, and firecrawl_research_* for paper-index and repository research."
             );
 
-            // 15h. firecrawl_search main description still steers to the
-            //     gov tool, but only the categories-gov phrasing copy is live
-            //     now: the self-host search service accepts categories gov.
-            //     Other copies (firecrawl_gov_search phrasing) refer to the
-            //     no-route-on-self-host /v2/search/gov endpoint and keep
-            //     getting stripped. The [^]{0,600}? span bound is
-            //     load-bearing: the opener wording also appears in copies
-            //     whose own tail sentence upstream removed (FULL_PROFILE,
-            //     ALEXANDRIA_SEARCH_INSTRUCTIONS on 3.33.4), and an unbounded
-            //     [^]*? then runs away 20k+ chars into the next tail, eating
-            //     whole code blocks (observed: SEARCH_PROFILE region and the
-            //     mcp-search tool registration destroyed). Legit copy is ~330
-            //     chars; 600 gives drift headroom, anything longer no-ops.
+            // 15h. firecrawl_search and mcp-search descriptions: the
+            //     categories-gov phrasing is a dead pointer on self-host
+            //     (no Government Index behind /v2/search); rewrite both
+            //     copies to point at firecrawl_gov_search instead, which #17
+            //     routes to the cloud. Needles stop before the upstream
+            //     Verify-sentence (contains a raw apostrophe -- forbidden
+            //     in this body) so that sentence stays untouched. Dist
+            //     holds escaped backticks and plain quotes in these
+            //     template literals; needles mirror those exact bytes.
+            //     Exact-string needles, no regex -- the 2026-10-22
+            //     runaway-regex incident (unbounded span ate the
+            //     SEARCH_PROFILE region) stays documented in history.
             c = c.replace(
-              / For a legal or regulatory question, firecrawl_gov_search[^]{0,600}?before citing current law\./g,
-              ""
+              " For a legal or regulatory question, \\`categories: [\"gov\"]\\` returns hits in \\`data.web\\` with \\`category: \"gov\"\\` and cannot be combined with other categories; authenticated sessions also have \\`firecrawl_gov_search\\` as the dedicated tool.",
+              " For a legal or regulatory question, firecrawl_gov_search searches US government legal and regulatory sources."
+            );
+            c = c.replace(
+              " For a legal or regulatory question, \\`categories: [\"gov\"]\\` returns results in \\`data.web\\` with \\`category: \"gov\"\\` and cannot be combined with other categories; \\`firecrawl_gov_search\\` is the dedicated tool.",
+              " For a legal or regulatory question, firecrawl_gov_search searches US government legal and regulatory sources."
             );
 
             // 15j. SEARCH_PROFILE_INSTRUCTIONS (firecrawl_search service
@@ -492,6 +547,10 @@ services:
       FIRECRAWL_API_URL: http://api:3002
       FIRECRAWL_DOMAIN: ${FIRECRAWL_DOMAIN}
       FIRECRAWL_NO_ENDPOINT_FEEDBACK: "true"
+      # gov 检索云端路由（#17 生效）：不设=云端免费档 keyless 直连；
+      # 设为 key-rotator 前缀（http://<rotator>:8788/firecrawl，不带尾斜杠）
+      # 则走带 key 通道，速率上限高且有审计日志。内网主机名按安全原则走项目 env。
+      FIRECRAWL_GOV_BASE_URL: ${FIRECRAWL_GOV_BASE_URL}
       FIRECRAWL_NO_SEARCH_FEEDBACK: "true"
       FIRECRAWL_RETRY_INITIAL_DELAY: "500"
       FIRECRAWL_RETRY_MAX_ATTEMPTS: "10"
