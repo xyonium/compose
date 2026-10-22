@@ -388,26 +388,6 @@ services:
             modified = true; logs.push("gov-tools-disable");
           }
 
-          // 15. Disable the firecrawl_feedback tool. Own-question-followup
-          //     getting started with user (2026-10-22): the tool bills the
-          //     agent an extra round trip per call to send ratings that only
-          //     ever surface on the firecrawl cloud dashboard -- the OSS api
-          //     has no read path (controllers/v2/feedback/* is record-only;
-          //     drizzle store + refund policy, zero GET routes), self-host
-          //     gains nothing back for the token spend. The Alexandria branch
-          //     of the schema is a second guaranteed-dead path here (refunds
-          //     route through cloud credit accounting). Env switch is
-          //     FIRECRAWL_NO_ENDPOINT_FEEDBACK but pinning in the patch keeps
-          //     the decision co-located with the other cloud-tool strips.
-          {
-            const before = c;
-            c = c.replace(
-              /if \(alexandriaFeedbackAvailable\(\)\) \{\s*server\.addTool\(\{\s*name:\s*[\x22\x27]firecrawl_feedback[\x22\x27]/g,
-              "if (false) { server.addTool({ name: \"firecrawl_feedback\""
-            );
-            if (c !== before) { modified = true; logs.push("feedback-tool-disable"); }
-          }
-
           if (modified) {
             fs.writeFileSync(f, c);
             n++;
