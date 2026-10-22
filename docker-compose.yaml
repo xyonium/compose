@@ -161,19 +161,23 @@ services:
             if (nc !== c) { c = nc; modified = true; logs.push("onlyCleanContent"); }
           }
 
-          // 3. Change examples: "onlyMainContent": true → "onlyCleanContent": true
-          if (c.includes("onlyCleanContent")) {
-            const nc = c.replace(/"onlyMainContent":\s*true/g, "\"onlyCleanContent\": true");
-            if (nc !== c) { c = nc; modified = true; logs.push("example-clean"); }
-          }
+          // 3. (removed 2026-10-21) example-clean: upstream dropped the
+          //    "onlyMainContent": true example literals in 3.23.0; verified a
+          //    silent no-op across npm 3.23.0-3.33.4 and on the pinned deploy
+          //    digest. Tombstone kept to preserve patch numbering.
 
-          // 4. Remove feedback text references (tool registration disabled by env var)
-          if (c.includes("firecrawl_search_feedback")) {
-            const before = c;
-            c = c.replace(/\*\*After the search:\*\*[^\n]*\n/g, "");
-            c = c.replace(/ Pass the top-level[^\n]*?firecrawl_search_feedback[^\n]*?results\./g, "");
-            c = c.replace(/ After using search results, call firecrawl_search_feedback[^\n]*?credit\./g, "");
-            if (c !== before) { modified = true; logs.push("feedback-text"); }
+          // 4. Strip the remaining feedback pointer from the search
+          //    description. The prose trio ("**After the search:**" etc.)
+          //    disappeared upstream in 3.23.0, but the rewrite left one tail
+          //    line pointing at a tool this stack disables via
+          //    FIRECRAWL_NO_SEARCH_FEEDBACK -- a guaranteed-dead pointer.
+          //    Old digest: line absent, no-op by design (A/B verified).
+          if (c.includes("for optional search feedback")) {
+            const nc = c.replace(
+              " Authenticated responses can include an \\`id\\` for optional search feedback.",
+              ""
+            );
+            if (nc !== c) { c = nc; modified = true; logs.push("feedback-pointer-strip"); }
           }
 
           // 5. categories enum 保留全部四项：github/research/pdf 是 SearXNG 查询改写
@@ -198,15 +202,11 @@ services:
             if (c !== before) { modified = true; logs.push("agent-interact-disable"); }
           }
 
-          // 8. Remove agent references from scrape/map descriptions
-          if (c.includes("firecrawl_agent")) {
-            const before = c;
-            c = c.replace(/\n\s*4\.\s*\*\*Use firecrawl_agent:\*\*[^\n]*/g, "");
-            c = c.replace(/\*\*IMPORTANT - Use map before agent:\*\*/g, "**IMPORTANT - Use map to find pages:**");
-            c = c.replace(/This is faster and cheaper than using[^.]*firecrawl_agent[^.]*\.\s*/g, "");
-            c = c.replace(/Only use the agent as a last resort after map\+scrape fails\.\s*/g, "");
-            if (c !== before) { modified = true; logs.push("agent-refs"); }
-          }
+          // 8. (removed 2026-10-21) agent-refs: the four scrape/map prose
+          //    lines this strip targeted were removed upstream in 3.23.0;
+          //    silent no-op since (verified on the pinned deploy digest).
+          //    Agent/interact registration stays disabled via #7. Tombstone
+          //    kept to preserve patch numbering.
 
           // 9. parse tool: this MCP is a remote deployment — filePath is resolved
           //    on the MCP container filesystem, so client-local paths always
@@ -240,16 +240,31 @@ services:
           //     (upstream shipped them blank; the tool descriptions carry most
           //     of the semantics, so keep these to what a caller cannot infer
           //     from the name — no apostrophes here, see patch 9 note).
-          //     Anchors are the unique zod param blocks.
+          //     Anchors are the unique zod param blocks; (\w+) capture makes
+          //     the patch alias-agnostic so tsup z-aliasing (z6, z7, z9, z12)
+          //     does not silently drift (root cause of 2026-10-21 dry-run
+          //     pinned latest sync revert; upstream alias had moved z6 to z9).
           {
             const before = c;
             c = c.replace(
-              "seed_ids: z6.array(z6.string()).min(1).max(10),\n      intent: z6.string().min(1),\n      mode: z6.enum([\"similar\", \"citers\", \"references\"]).optional(),\n      k: z6.number().int().min(1).max(500).optional(),",
-              "seed_ids: z6.array(z6.string()).min(1).max(10).describe(\"1-10 paper IDs; the first is the seed, the rest are anchors.\"),\n      intent: z6.string().min(1).describe(\"What the related papers should be about; used to rank candidates.\"),\n      mode: z6.enum([\"similar\", \"citers\", \"references\"]).optional().describe(\"similar (default): co-citation/bibliographic coupling; citers: papers citing the seed; references: papers the seed cites.\"),\n      k: z6.number().int().min(1).max(500).optional().describe(\"Number of ranked papers to return (default 10).\"),"
+              /seed_ids: (\w+)\.array\(\1\.string\(\)\)\.min\(1\)\.max\(10\)(?!\.describe)/,
+              "seed_ids: $1.array($1.string()).min(1).max(10).describe(\"1-10 paper IDs; the first is the seed, the rest are anchors.\")"
             );
             c = c.replace(
-              "question: z6.string().min(1),\n      k: z6.number().int().min(1).max(50).optional()",
-              "question: z6.string().min(1).describe(\"What to look for in the full text; passages are selected by relevance to it.\"),\n      k: z6.number().int().min(1).max(50).optional()"
+              /intent: (\w+)\.string\(\)\.min\(1\)(?!\.describe)/,
+              "intent: $1.string().min(1).describe(\"What the related papers should be about; used to rank candidates.\")"
+            );
+            c = c.replace(
+              /mode: (\w+)\.enum\(\[\"similar\", \"citers\", \"references\"\]\)\.optional\(\)(?!\.describe)/,
+              "mode: $1.enum([\"similar\", \"citers\", \"references\"]).optional().describe(\"similar (default): co-citation/bibliographic coupling; citers: papers citing the seed; references: papers the seed cites.\")"
+            );
+            c = c.replace(
+              /k: (\w+)\.number\(\)\.int\(\)\.min\(1\)\.max\(500\)\.optional\(\)(?!\.describe)/g,
+              "k: $1.number().int().min(1).max(500).optional().describe(\"Number of ranked papers to return (default 10).\")"
+            );
+            c = c.replace(
+              /question: (\w+)\.string\(\)\.min\(1\)(?!\.describe)/g,
+              "question: $1.string().min(1).describe(\"What to look for in the full text; passages are selected by relevance to it.\")"
             );
             if (c !== before) { modified = true; logs.push("research-param-desc"); }
           }
@@ -285,6 +300,34 @@ services:
               ""
             );
             if (c !== before) { modified = true; logs.push("alexandria-desc-strip"); }
+          }
+
+          // 13b. Same strip for the reworded scrape description: upstream
+          //      rewrote the find_tools/alexandria guidance in 3.33.x, so the
+          //      original #13 anchor no longer matches this variant. Kept as
+          //      a separate block with its own mark so drift shows in logs;
+          //      on the frozen digest this is a no-op (text absent there).
+          if (c.includes("can discover providers for the same fields across several pages")) {
+            const before = c;
+            c = c.replace(
+              "\n\n\\`firecrawl_search\\` and \\`firecrawl_find_tools\\` can discover providers for the same fields across several pages; a matching provider returns typed records in one call.\n\nWith \\`alexandria\\` in place of \\`url\\`, the tool runs catalogued provider capabilities instead of fetching a page. Provider discovery and execution require an API key on a team with Alexandria enabled.\n",
+              "\n"
+            );
+            if (c !== before) { modified = true; logs.push("alexandria-desc-strip-v2"); }
+          }
+
+          // 14. Disable gov_search tool (cloud-only, added upstream in 3.33.x):
+          //     the Government Index is a cloud dataset; the self-hosted OSS
+          //     api has no /v2/search/gov route (apps/api/src/routes/v2.ts has
+          //     /search, /search/research, /research only), so every call 404s.
+          //     The registration is a single unconditional statement, same
+          //     shape as #10/#12.
+          if (c.includes("registerGovTools(server, getClient);")) {
+            c = c.replace(
+              "registerGovTools(server, getClient);",
+              "/* gov-tools-disabled: no Government Index backend in self-host */"
+            );
+            modified = true; logs.push("gov-tools-disable");
           }
 
           if (modified) {
