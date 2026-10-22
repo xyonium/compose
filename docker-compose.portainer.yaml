@@ -374,26 +374,22 @@ services:
             if (c !== before) { modified = true; logs.push("alexandria-desc-strip-v2"); }
           }
 
-          // 14. Disable gov_search: the upstream tool goes to a US Government
-          //     Index backend that only exists on the firecrawl cloud api --
-          //     self-host has no route for it, every call would 404. Same
-          //     reasoning as #7/#10/#12.
-          if (c.includes("registerGovTools(server, getClient);")) {
-            c = c.replace(
-              "registerGovTools(server, getClient);",
-              "/* gov-tools-disabled: no Government Index backend in self-host */"
-            );
-            modified = true; logs.push("gov-tools-disable");
-          }
+          // 14. (tombstoned 2026-10-22) gov-search re-enabled. Cloud
+          //     Government Index is free and answers keyless requests
+          //     (no Authorization header); with FIRECRAWL_API_KEY unset
+          //     the SDK omits the header and the tool self-hosts via the
+          //     cloud free tier. docs/gov-search-investigation.md.
 
           // 15. Strip cloud-only guidance from FULL/KEYLESS profile
           //     instructions. The initialize instructions steer the agent more
           //     strongly than any single tool description (read first, every
           //     session): they still steer toward firecrawl_agent/-
           //     agent_status (disabled by #7), firecrawl_find_tools (#12),
-          //     firecrawl_monitor_* (#6), firecrawl_gov_search (#14), and the
-          //     Alexandria catalogue surface (no backend on self-host --
-          //     a guaranteed-dead pointer per session). Both interpolation
+          //     firecrawl_monitor_* (#6), and the Alexandria catalogue
+          //     surface (no backend on self-host -- a guaranteed-dead
+          //     pointer per session). firecrawl_gov_search is back (see #14
+          //     tombstone): the gov shards below keep its live pointers.
+          //     Both interpolation
           //     sources ALEXANDRIA_CATALOGUE_SENTENCE /
           //     ALEXANDRIA_SOURCES_ALWAYS_ON are blanked so every other
           //     hidden reference degrades to an empty string too.
@@ -448,39 +444,39 @@ services:
               ""
             );
 
-            // 15e. FULL: strip gov-search + alexandria-sources tail block.
+            // 15e. FULL: strip the alexandria half of the tail block; the
+            //     gov half stays (tool re-enabled, see #14 tombstone).
             c = c.replace(
-              " For a legal or regulatory question, firecrawl_gov_search searches primary law and regulatory material from US federal, state, and local government sources: statutes, regulations, codes, court opinions, and other government publications; firecrawl_search with categories: [\"gov\"] reaches the same sources and cannot be combined with other categories. firecrawl_search with sources: [{type: \"alexandria\"}] returns compact tool summaries in data.tools; toolDetail: \"full\" includes contracts, firecrawl_find_tools starts with categories, lists providers, then compact tools, and expands the selected full contract, and firecrawl_scrape with alexandria: [{provider, capability, options}] executes up to ten capabilities and returns their results. Alexandria access needs an API key on a team with it enabled.",
+              " firecrawl_search with sources: [{type: \"alexandria\"}] returns compact tool summaries in data.tools; toolDetail: \"full\" includes contracts, firecrawl_find_tools starts with categories, lists providers, then compact tools, and expands the selected full contract, and firecrawl_scrape with alexandria: [{provider, capability, options}] executes up to ten capabilities and returns their results. Alexandria access needs an API key on a team with it enabled.",
               ""
             );
 
-            // 15f. KEYLESS: drop gov categories line.
-            c = c.replace(
-              " For legal or regulatory questions, firecrawl_search with categories: [\"gov\"] searches US government legal and regulatory sources and cannot be combined with other categories.",
-              ""
-            );
+            // 15f. (tombstoned 2026-10-22) KEYLESS gov categories line kept:
+            //     categories gov hits the same free Government Index backend
+            //     which serves keyless sessions too (gov-search restored).
 
-            // 15g. KEYLESS: rewrite bearer-key tail (drop agent/find_tools/Alexandria).
+            // 15g. KEYLESS: rewrite bearer-key tail (drop agent/find_tools/
+            //     Alexandria; keep the restored gov tool in the listing).
             c = c.replace(
               "An Authorization bearer API key can provide higher usage limits and expose additional tools, subject to plan, deployment, and team policy, including firecrawl_map for site URL discovery, firecrawl_agent and firecrawl_agent_status for multi-source research that returns structured data when the URLs are not known, firecrawl_research_* for paper-index and repository research, and firecrawl_find_tools as the progressive Alexandria catalogue lookup alongside the Alexandria options of firecrawl_search and firecrawl_scrape for catalogued data providers.",
-              "An Authorization bearer API key can provide higher usage limits and expose additional tools, subject to plan, deployment, and team policy, including firecrawl_map for site URL discovery and firecrawl_research_* for paper-index and repository research."
+              "An Authorization bearer API key can provide higher usage limits and expose additional tools, subject to plan, deployment, and team policy, including firecrawl_map for site URL discovery, firecrawl_gov_search for US government legal and regulatory sources, and firecrawl_research_* for paper-index and repository research."
             );
 
             // 15h. firecrawl_search main description still steers to the
-            //     disabled gov tool -- the sentence names firecrawl_gov_search
-            //     as the dedicated tool for legal/regulatory questions, a dead
-            //     pointer on the live 11-tool surface (same class as the #4
-            //     feedback pointer). Strip the sentence; leave the research
-            //     category sentence that follows intact. The [^]{0,600}? span
-            //     bound is load-bearing: the opener wording also appears in
-            //     copies whose own tail sentence upstream removed (FULL_PROFILE,
+            //     gov tool, but only the categories-gov phrasing copy is live
+            //     now: the self-host search service accepts categories gov.
+            //     Other copies (firecrawl_gov_search phrasing) refer to the
+            //     no-route-on-self-host /v2/search/gov endpoint and keep
+            //     getting stripped. The [^]{0,600}? span bound is
+            //     load-bearing: the opener wording also appears in copies
+            //     whose own tail sentence upstream removed (FULL_PROFILE,
             //     ALEXANDRIA_SEARCH_INSTRUCTIONS on 3.33.4), and an unbounded
             //     [^]*? then runs away 20k+ chars into the next tail, eating
             //     whole code blocks (observed: SEARCH_PROFILE region and the
             //     mcp-search tool registration destroyed). Legit copy is ~330
             //     chars; 600 gives drift headroom, anything longer no-ops.
             c = c.replace(
-              / For a legal or regulatory question,[^]{0,600}?before citing current law\./g,
+              / For a legal or regulatory question, firecrawl_gov_search[^]{0,600}?before citing current law\./g,
               ""
             );
 
@@ -496,11 +492,11 @@ services:
               " For a biomedical, life-science, clinical, or arXiv literature question, the firecrawl_research_* tools search the paper index, while categories: [\"research\"] on firecrawl_search filters ordinary web results to research-affiliated websites. Use the firecrawl_research_* tools to search academic and research literature, expand from anchor papers via the citation graph, and read full-text passages from a specific paper. Search and discovery tools are read-only and return ranked results.",
               " Use the firecrawl_research_* tools to search academic and research literature, expand from anchor papers via the citation graph, and read full-text passages from a specific paper."
             );
-            // Billing line drops the gov-search free note and the dead
-            //     Alexandria-discovery prices clause.
+            // Billing line keeps the gov-search free note (gov restored);
+            //     only the dead Alexandria-discovery prices clause goes.
             c = c.replace(
-              " Billing: web, developer, and research search are billed per request; government search is free; Alexandria discovery (firecrawl_search with sources [\"alexandria\"] alone, and firecrawl_find_tools) is free; firecrawl_scrape is billed, as a page retrieval in url mode or per executed capability in alexandria mode (pass includeCosts to firecrawl_find_tools to see prices).",
-              " firecrawl_scrape is billed per retrieved page in url mode."
+              "; Alexandria discovery (firecrawl_search with sources [\"alexandria\"] alone, and firecrawl_find_tools) is free; firecrawl_scrape is billed, as a page retrieval in url mode or per executed capability in alexandria mode (pass includeCosts to firecrawl_find_tools to see prices).",
+              ". firecrawl_scrape is billed per retrieved page in url mode."
             );
 
             // 15k. ALEXANDRIA_SEARCH_INSTRUCTIONS is compile-time folded into
@@ -523,7 +519,7 @@ services:
             //     old anchor ate ~200 lines down into a tool registration).
             c = c.replace(
               /var SEARCH_PROFILE_INSTRUCTIONS = ALEXANDRIA_SEARCH_INSTRUCTIONS \+ `[^]*?`;\nvar SEARCH_PROFILE_TOOLS/,
-              "var SEARCH_PROFILE_INSTRUCTIONS = ` Firecrawl provides web, developer, and research search. Use firecrawl_search to find relevant results across the web and specialized indexes. firecrawl_scrape with a url retrieves one supplied page. For a programming question, firecrawl_developer_search searches indexed public repositories, GitHub issues, merged pull requests, READMEs, and code documentation and returns the matched passages, and skills: \"only\" narrows it to agent-skill files; firecrawl_search with categories: [\"developer\"] reaches the same index beside ordinary web results, returning the hits in the web group rather than as passages and offering no skills filter. Use the firecrawl_research_* tools to search academic and research literature, expand from anchor papers via the citation graph, and read full-text passages from a specific paper. Billing: web, developer, and research search are billed per request; firecrawl_scrape is billed per retrieved page. Returns result groups in \\`data\\` and an operation \\`id\\`.\n\n`;\nvar SEARCH_PROFILE_TOOLS"
+              "var SEARCH_PROFILE_INSTRUCTIONS = ` Firecrawl provides web, developer, and research search. Use firecrawl_search to find relevant results across the web and specialized indexes. firecrawl_scrape with a url retrieves one supplied page. For a programming question, firecrawl_developer_search searches indexed public repositories, GitHub issues, merged pull requests, READMEs, and code documentation and returns the matched passages, and skills: \"only\" narrows it to agent-skill files; firecrawl_search with categories: [\"developer\"] reaches the same index beside ordinary web results, returning the hits in the web group rather than as passages and offering no skills filter. Use the firecrawl_research_* tools to search academic and research literature, expand from anchor papers via the citation graph, and read full-text passages from a specific paper. Billing: web, developer, and research search are billed per request; government search is free. firecrawl_scrape is billed per retrieved page. Returns result groups in \\`data\\` and an operation \\`id\\`.\n\n`;\nvar SEARCH_PROFILE_TOOLS"
             );
 
             // 15l. searchQueryIsValid refine error message in the live
