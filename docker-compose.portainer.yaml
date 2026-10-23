@@ -1,0 +1,167 @@
+# 部署平台自定义层：与上游 docker-compose.upstream.yaml 合并使用
+# 合并产物 docker-compose.yaml 由 main 分支的 sync-dify.yml 工作流生成
+#（bot 维护，勿手改）；要调整部署只改本文件。
+#
+# 自定义内容（2026-10-23 迁移入 compose 仓库，按安全原则：域名/registry 主机名
+# 一律 env 模板化，仓库任何文件不得含真实域名/主机名，真实值由部署平台项目 env 注入）：
+#   1. 镜像全部走私服 mirror（${JCR_REGISTRY} 的 docker hub 代理；weaviate 上游在
+#      cr.weaviate.io，docker hub 有同名镜像）registry 主机名走项目 env
+#   2. api / web / plugin_daemon 接 traefik（域名 ${DIFY_DOMAIN} 走项目 env；
+#      部署主机风格：websecure 入口固定泛域名证书文件，tls=true，无 certresolver）；
+#      nginx 因此摘出默认启动（profiles: [nginx]）
+#   3. env_file 全清零：上游用 envs/*.env + ./.env 分层（required: false），
+#      部署平台由项目 env 统一注入，merged 产物不得残留 env_file
+#   4. 四处数据目录由 bind 改 named volume（app/db/redis/weaviate），
+#      固定项目名 dify，卷名恒为 dify_*，重建自动挂回
+#   5. 镜像 tag 跟随上游版本（当前 1.18.0），升级 = 手改本文件 tag 后跑 sync
+
+name: dify
+
+services:
+  init_permissions:
+    volumes:
+      - app:/app/api/storage
+
+  api:
+    image: ${JCR_REGISTRY}/docker/langgenius/dify-api:1.18.0
+    env_file: !reset null
+    volumes:
+      - app:/app/api/storage
+    expose:
+      - '5001'
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=reverse-proxy"
+      - "traefik.http.services.difyapi.loadbalancer.server.port=5001"
+      - "traefik.http.routers.difyapi.rule=Host(`${DIFY_DOMAIN}`) && (PathPrefix(`/console/api`)||PathPrefix(`/api`)||PathPrefix(`/v1`)||PathPrefix(`/files`))"
+      - "traefik.http.routers.difyapi.entrypoints=websecure"
+      - "traefik.http.routers.difyapi.tls=true"
+      - "traefik.http.routers.difyapihttp.rule=Host(`${DIFY_DOMAIN}`) && (PathPrefix(`/console/api`)||PathPrefix(`/api`)||PathPrefix(`/v1`)||PathPrefix(`/files`))"
+      - "traefik.http.routers.difyapihttp.entrypoints=web"
+      - "traefik.http.routers.difyapihttp.middlewares=http2https"
+
+  api_websocket:
+    image: ${JCR_REGISTRY}/docker/langgenius/dify-api:1.18.0
+    env_file: !reset null
+    volumes:
+      - app:/app/api/storage
+
+  worker:
+    image: ${JCR_REGISTRY}/docker/langgenius/dify-api:1.18.0
+    env_file: !reset null
+    volumes:
+      - app:/app/api/storage
+
+  worker_beat:
+    image: ${JCR_REGISTRY}/docker/langgenius/dify-api:1.18.0
+    env_file: !reset null
+    volumes:
+      - app:/app/api/storage
+
+  worker_knowledge_fs_upgrade:
+    image: ${JCR_REGISTRY}/docker/langgenius/dify-api:1.18.0
+    env_file: !reset null
+
+  web:
+    image: ${JCR_REGISTRY}/docker/langgenius/dify-web:1.18.0
+    env_file: !reset null
+    expose:
+      - '3000'
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=reverse-proxy"
+      - "traefik.http.services.difyweb.loadbalancer.server.port=3000"
+      - "traefik.http.routers.difyweb.rule=Host(`${DIFY_DOMAIN}`)"
+      - "traefik.http.routers.difyweb.entrypoints=websecure"
+      - "traefik.http.routers.difyweb.tls=true"
+      - "traefik.http.routers.difywebhttp.rule=Host(`${DIFY_DOMAIN}`)"
+      - "traefik.http.routers.difywebhttp.entrypoints=web"
+      - "traefik.http.routers.difywebhttp.middlewares=http2https"
+
+  db_postgres:
+    image: ${JCR_REGISTRY}/docker/postgres:15-alpine
+    volumes:
+      - db:/var/lib/postgresql/data
+
+  redis:
+    image: ${JCR_REGISTRY}/docker/redis:6-alpine
+    volumes:
+      - redis:/data
+
+  sandbox:
+    image: ${JCR_REGISTRY}/docker/langgenius/dify-sandbox:0.2.15
+    env_file: !reset null
+
+  local_sandbox:
+    image: ${JCR_REGISTRY}/docker/langgenius/dify-agent-local-sandbox:1.18.0
+    env_file: !reset null
+
+  plugin_daemon:
+    image: ${JCR_REGISTRY}/docker/langgenius/dify-plugin-daemon:0.6.10-local
+    env_file: !reset null
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=reverse-proxy"
+      - "traefik.http.services.plugind.loadbalancer.server.port=5002"
+      - "traefik.http.routers.plugind.rule=Host(`${DIFY_DOMAIN}`) && (PathPrefix(`/e/`))"
+      - "traefik.http.routers.plugind.entrypoints=websecure"
+      - "traefik.http.routers.plugind.tls=true"
+      - "traefik.http.routers.plugindhttp.rule=Host(`${DIFY_DOMAIN}`) && (PathPrefix(`/e/`))"
+      - "traefik.http.routers.plugindhttp.entrypoints=web"
+      - "traefik.http.routers.plugindhttp.middlewares=http2https"
+
+  knowledge_fs:
+    image: ${JCR_REGISTRY}/docker/langgenius/dify-knowledge-fs-api:deploy-konwledge
+    env_file: !reset null
+
+  knowledge_fs_document_worker:
+    env_file: !reset null
+
+  knowledge_fs_source_worker:
+    env_file: !reset null
+
+  knowledge_fs_research_worker:
+    env_file: !reset null
+
+  knowledge_fs_maintenance_worker:
+    env_file: !reset null
+
+  knowledge_fs_dispatch_worker:
+    env_file: !reset null
+
+  agent_backend:
+    image: ${JCR_REGISTRY}/docker/langgenius/dify-agent-backend:1.18.0
+    env_file: !reset null
+
+  agent_ssrf_proxy:
+    image: ${JCR_REGISTRY}/docker/ubuntu/squid:latest
+
+  ssrf_proxy:
+    image: ${JCR_REGISTRY}/docker/ubuntu/squid:latest
+
+  nginx:
+    # 摘出默认启动：外部访问走部署主机 traefik，不经 nginx
+    profiles:
+      - nginx
+
+  weaviate:
+    image: ${JCR_REGISTRY}/docker/semitechnologies/weaviate:1.39.13
+    volumes:
+      - weaviate:/var/lib/weaviate
+
+  unstructured:
+    env_file: !reset null
+
+  knowledge_fs_unstructured:
+    env_file: !reset null
+
+networks:
+  default:
+    name: reverse-proxy
+    external: true
+
+volumes:
+  app:
+  db:
+  redis:
+  weaviate:
