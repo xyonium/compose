@@ -1,0 +1,224 @@
+name: Sync dify compose
+
+# 让 `dify` orphan 分支与上游 langgenius/dify 保持同步（分支 2026-10-23 迁移入
+# 本仓库：域名/registry 主机名一律 env 模板化，仓库任何文件不得含真实域名/主机名）：
+#   1. docker-compose.upstream.yaml  <- 上游 docker/docker-compose.yaml 原样拷贝（bot 维护）
+#   2. .env.example                  <- 上游 docker/.env.example 原样拷贝（bot 维护）
+#   3. docker-compose.yaml           <- 与 docker-compose.portainer.yaml 的预合并产物，
+#                                       dify-api / dify-web / dify-plugin-daemon 钉 digest
+#                                      （--no-interpolate 保留 ${...} 模板，bot 生成，
+#                                       部署平台项目 env 注入：DIFY_DOMAIN / JCR_REGISTRY + 凭据变量）
+# 全部自定义只放 docker-compose.portainer.yaml——另三个文件永远不要手改。
+# 定时任务只跑默认分支，所以本文件放 main，checkout/推送的目标是 dify 分支。
+
+on:
+  # ⚠️ 定时刻意未启用：启用方法——取消下面两行注释。
+  # （与 sync-firecrawl / sync-authentik / sync-netbird / sync-sub2api / sync-n8n 各错开 15 分钟，避免并发推不同分支互相踩脚）
+  # schedule:
+  #   - cron: "27 4 5 * *" # 每月 5 日 04:27 UTC（北京 12:27）
+  workflow_dispatch:
+    inputs:
+      pin_mode:
+        description: 'digest 策略：latest=按 portainer 文件里的 tag 解析当前 digest（升级通道）；keep=保留合并产物里既有 digest（只验证合并不升级）'
+        required: true
+        default: 'latest'
+        type: choice
+        options: ['latest', 'keep']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dify-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      PIN_MODE: ${{ inputs.pin_mode || 'latest' }}
+    steps:
+      - name: Check out dify branch
+        uses: actions/checkout@v4
+        with:
+          ref: dify
+
+      - name: Fetch latest upstream compose and env reference
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/langgenius/dify/main/docker/docker-compose.yaml \
+            -o docker-compose.upstream.yaml
+          # .env.example 也随同步原样更新，分支内即可查全部变量，不用翻上游
+          curl -fsSL https://raw.githubusercontent.com/langgenius/dify/main/docker/.env.example \
+            -o .env.example
+
+      - name: Version drift check (overlay tags must match upstream)
+        run: |
+          set -euo pipefail
+          # dify 的 compose 结构与镜像版本耦合：上游升级 dify 版本时，
+          # portainer 层里的 tag 必须手改跟进，否则合成「新结构 + 旧镜像」的坏配置。
+          for repo in dify-api dify-web dify-plugin-daemon; do
+            up=$(grep -oE "langgenius/${repo}:[A-Za-z0-9._-]+" docker-compose.upstream.yaml | head -1)
+            ov=$(grep -oE "langgenius/${repo}:[A-Za-z0-9._-]+" docker-compose.portainer.yaml | head -1)
+            up_tag=${up#*:}; ov_tag=${ov#*:}
+            # 上游 image 行可能带 ${VAR:-...} 默认值形式
+            up_tag=${up_tag##*:-}; up_tag=${up_tag%\}}
+            if [ "$up_tag" != "$ov_tag" ]; then
+              echo "::error::上游 ${repo} 已升到 ${up_tag}，portainer 文件还是 ${ov_tag}——手改 portainer tag 后再 sync"
+              exit 1
+            fi
+            echo "${repo}: tag ${ov_tag} 与上游一致"
+          done
+
+      - name: Merge, pin image digests and validate
+        run: |
+          set -euo pipefail
+          # --no-interpolate 保留 ${VAR} 模板，由部署平台的项目 env 注入
+          docker compose -f docker-compose.upstream.yaml -f docker-compose.portainer.yaml \
+            config --no-interpolate --quiet
+          docker compose -f docker-compose.upstream.yaml -f docker-compose.portainer.yaml \
+            config --no-interpolate > docker-compose.merged.tmp.yaml
+
+          # 钉三个主程序镜像：dify-api（api/api_websocket/worker/worker_beat/
+          # worker_knowledge_fs_upgrade 共 5 处）、dify-web（1 处）、dify-plugin-daemon（1 处）。
+          # tag 由 portainer 文件钉版本（跟随上游），bot 只解析 digest。
+          # postgres / redis / weaviate / squid 等稳定第三方镜像浮动不钉。
+          # 镜像更新靠 compose diff 驱动：新 digest -> 文件变化 -> 平台重建拉新镜像，
+          # digest 历史留在 git 里可回滚。
+          #（合并产物里镜像行是字面 ${JCR_REGISTRY}/...，
+          #  用 python 做纯字面替换，避免 shell/sed 对 ${} 双重转义——
+          #  netbird/authentik/firecrawl/sub2api/n8n 同款写法）
+          python3 - <<'PYEOF'
+          import re, subprocess, sys, os
+
+          pins = [
+              ('${JCR_REGISTRY}/docker/langgenius/dify-api', 5),
+              ('${JCR_REGISTRY}/docker/langgenius/dify-web', 1),
+              ('${JCR_REGISTRY}/docker/langgenius/dify-plugin-daemon', 1),
+          ]
+          pin_mode = os.environ.get('PIN_MODE', 'latest')
+          assert pin_mode in ('latest', 'keep'), pin_mode
+
+          t = open('docker-compose.merged.tmp.yaml').read()
+          prev = open('docker-compose.yaml').read() if os.path.exists('docker-compose.yaml') else ''
+          for lit, expect in pins:
+              pat = re.compile(re.escape(lit) + r'(:[A-Za-z0-9_.-]+)?(@sha256:[0-9a-f]{64})?(?=\s*$)', re.M)
+              m = pat.search(t)
+              if not m:
+                  print(f'::error::image line not found for {lit} (override drift?)')
+                  sys.exit(1)
+              ref = 'langgenius/' + lit.rsplit('/', 1)[1] + (m.group(1) or ':latest')
+              if pin_mode == 'keep':
+                  # 「保留」指向旧生成品 docker-compose.yaml——portainer 手改层本来就不带
+                  # digest（那是 bot 的活），本步刚 merge 出来的产物只剩裸 tag。
+                  prev_m = pat.search(prev)
+                  if not prev_m or '@sha256:' not in prev_m.group(0):
+                      print(f'::error::pin_mode=keep 但旧 docker-compose.yaml 里 {lit} 无 digest')
+                      sys.exit(1)
+                  digest = re.search(r'sha256:[0-9a-f]{64}', prev_m.group(0)).group(0)
+              else:
+                  r = subprocess.run(['docker', 'buildx', 'imagetools', 'inspect', ref,
+                                      '--format', '{{.Manifest.Digest}}'],
+                                     capture_output=True, text=True)
+                  digest = r.stdout.strip()
+                  if not digest.startswith('sha256:'):
+                      print(f'::error::empty digest for {ref}: {r.stdout!r} {r.stderr!r}')
+                      sys.exit(1)
+              t, n = pat.subn(f'{lit}{m.group(1) or ":latest"}@{digest}', t)
+              if n != expect:
+                  print(f'::error::pin failed for {lit}: matched {n} (expect {expect})')
+                  sys.exit(1)
+              print(f'pin_mode={pin_mode}: pinned {lit}@{digest} ({n} 处)')
+          open('docker-compose.merged.tmp.yaml', 'w').write(t)
+          n = t.count('@sha256:')
+          if n != 7:
+              print(f'::error::expected 7 pinned image refs in merged config, got {n}')
+              sys.exit(1)
+          PYEOF
+
+          # 反向断言优先于正向哨兵：清洗后的产物不得含 certresolver / env_file /
+          # 宿主端口映射（正向哨兵可能被注释行骗过——netbird 教训）
+          for bad in \
+            "certresolver" \
+            "myresolver" \
+            "tls.domains" \
+            "env_file" \
+            "published" ; do
+            grep -qF "$bad" docker-compose.merged.tmp.yaml && {
+              echo "::error::merged config unexpectedly contains '$bad'"
+              exit 1
+            }
+          done
+
+          # 哨兵检查：上游若改了我们 override 依赖的东西，大声失败而不是部署坏配置。
+          #（只用短 token——生成文件会折叠长行；含 ${} 的 needle 必须单引号，
+          #  否则 set -u 下被 shell 展开成 unbound variable；grep -qF 纯字面）
+          for needle in \
+            "name: dify" \
+            'Host(`${DIFY_DOMAIN}`)' \
+            '${JCR_REGISTRY}/docker/langgenius/dify-api' \
+            '${JCR_REGISTRY}/docker/langgenius/dify-web' \
+            '${JCR_REGISTRY}/docker/langgenius/dify-plugin-daemon' \
+            '${JCR_REGISTRY}/docker/postgres' \
+            '${JCR_REGISTRY}/docker/redis' \
+            '${JCR_REGISTRY}/docker/semitechnologies/weaviate' \
+            "SECRET_KEY" \
+            "DB_PASSWORD" \
+            "WEAVIATE_API_KEY" \
+            "reverse-proxy" \
+            "traefik.enable" \
+            "tls=true" \
+            "http2https" \
+            "weaviate" \
+            "ssrf_proxy_network" \
+            "nginx" ; do
+            grep -qF "$needle" docker-compose.merged.tmp.yaml || {
+              echo "::error::merged config missing '$needle' — upstream changed something our override relies on"
+              exit 1
+            }
+          done
+          mv docker-compose.merged.tmp.yaml docker-compose.yaml
+
+          # 结构 smoke test：YAML 可解析 + 核心服务在位 + 7 钉版引用 + env 模板保留。
+          #（最终校验不依赖 `docker compose config` 之外的环境假设——
+          #  对齐 netbird/authentik/firecrawl/sub2api/n8n 范式：python 断言足够）
+          python3 - <<'PYEOF'
+          import yaml, sys
+          d = yaml.safe_load(open('docker-compose.yaml'))
+          svcs = set(d.get('services', {}))
+          need = {'api', 'api_websocket', 'worker', 'worker_beat', 'web',
+                  'db_postgres', 'redis', 'sandbox', 'plugin_daemon', 'weaviate',
+                  'ssrf_proxy', 'nginx'}
+          missing = need - svcs
+          assert not missing, f"services missing: {missing}"
+          assert not d['services']['api'].get('ports'), \
+              "api ports drift — host port mapping is back"
+          nginx_profiles = d['services']['nginx'].get('profiles', [])
+          assert nginx_profiles == ['nginx'], \
+              f"nginx profile drift (should stay out of default startup): {nginx_profiles}"
+          t = open('docker-compose.yaml').read()
+          missing = [v for v in ('${JCR_REGISTRY}', '${DIFY_DOMAIN}') if v not in t]
+          assert not missing, f"missing env templates: {missing}"
+          assert t.count('@sha256:') == 7, f"expected 7 pinned image refs, got {t.count('@sha256:')}"
+          print('merged structure OK: yaml parses, core services present, env templates intact, 7 pinned refs')
+          PYEOF
+
+      - name: Secret/sensitive leakage gate
+        run: |
+          set -euo pipefail
+          # 总闸：任何真实域名/标识串都不应出现在仓库任何文件里
+          #（占位域名 dify.example.com / *.example.com 是允许的；
+          #  pattern 隔位通配混淆——不含可直读串、不自匹配，各分支同款）
+          ! git grep -niE 's[a-z]v[a-z]rc[a-z]re|h[a-z]nh[a-z]o[a-z]i' || {
+            echo "::error::仓库文件残留真实域名——清洗机制被破坏"; exit 1; }
+          echo "leakage gate OK"
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docker-compose.upstream.yaml .env.example docker-compose.yaml
+          if git diff --cached --quiet; then
+            echo "Upstream unchanged, nothing to do."
+          else
+            git commit -m "sync: upstream compose + image digests ($(date -u +%F), pin_mode=${PIN_MODE:-latest})"
+            git push origin dify
+          fi
