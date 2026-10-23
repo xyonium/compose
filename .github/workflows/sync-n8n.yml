@@ -168,7 +168,7 @@ jobs:
               "n8n ports !reset drift — host port mapping is back"
           t = open('docker-compose.yaml').read()
           missing = [v for v in ('${JCR_REGISTRY}', '${N8N_DOMAIN}',
-                                 '${POSTGRES_PASSWORD', '${ENCRYPTION_KEY}',
+                                 'POSTGRES_PASSWORD', '${ENCRYPTION_KEY}',
                                  '${RUNNERS_AUTH_TOKEN}') if v not in t]
           assert not missing, f"missing env templates: {missing}"
           assert t.count('@sha256:') == 4, f"expected 4 pinned image refs, got {t.count('@sha256:')}"
