@@ -97,7 +97,7 @@ services:
     env_file: !reset null
 
   plugin_daemon:
-    image: ${JCR_REGISTRY}/docker/langgenius/dify-plugin-daemon:0.6.10-local
+    image: ${JCR_REGISTRY}/docker/langgenius/dify-plugin-daemon:0.6.11-local
     env_file: !reset null
     labels:
       - "traefik.enable=true"
