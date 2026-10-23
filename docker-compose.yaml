@@ -576,12 +576,12 @@ services:
       - traefik.http.routers.mcp-fc.rule=Host(`${FIRECRAWL_DOMAIN}`) && (PathPrefix(`/v2/mcp`) || PathPrefix(`/mcp`) || PathPrefix(`/sse`) || PathPrefix(`/messages`))
       - traefik.http.routers.mcp-fc.entrypoints=websecure
       - traefik.http.routers.mcp-fc.tls=true
-      - traefik.http.routers.mcp-fc.middlewares=mcp-legacy-to-v2
+      - traefik.http.routers.mcp-fc.middlewares=mcp-v2-to-legacy
       - traefik.http.routers.mcp-fchttp.rule=Host(`${FIRECRAWL_DOMAIN}`) && (PathPrefix(`/v2/mcp`) || PathPrefix(`/mcp`) || PathPrefix(`/sse`) || PathPrefix(`/messages`))
       - traefik.http.routers.mcp-fchttp.entrypoints=web
-      - traefik.http.routers.mcp-fchttp.middlewares=http2https,mcp-legacy-to-v2
-      - traefik.http.middlewares.mcp-legacy-to-v2.replacepathregex.regex=^/mcp(/.*)?$$
-      - traefik.http.middlewares.mcp-legacy-to-v2.replacepathregex.replacement=/v2/mcp$$1
+      - traefik.http.routers.mcp-fchttp.middlewares=http2https,mcp-v2-to-legacy
+      - traefik.http.middlewares.mcp-v2-to-legacy.replacepathregex.regex=^/v2/mcp(/.*)?$$
+      - traefik.http.middlewares.mcp-v2-to-legacy.replacepathregex.replacement=/mcp$$1
     networks:
       backend: null
       reverse-proxy: null
