@@ -312,15 +312,15 @@ services:
             if (c !== before) { modified = true; logs.push("alexandria-desc-strip"); }
           }
 
-          // 13b. Same strip for the reworded scrape description: upstream
-          //      rewrote the find_tools/alexandria guidance in 3.33.x, so the
-          //      original #13 anchor no longer matches this variant. Kept as
-          //      a separate block with its own mark so drift shows in logs;
-          //      on the frozen digest this is a no-op (text absent there).
+          // 13b. Same strip for the search-surface scrape description
+          //      variant. Needle refreshed 2026-10-23: 3.33.4 says "a
+          //      matching Alexandria provider" (the earlier needle missed
+          //      the extra word and went permanently no-op) and ends with
+          //      an Alexandria billing sentence; both die together.
           if (c.includes("can discover providers for the same fields across several pages")) {
             const before = c;
             c = c.replace(
-              "\n\n\\`firecrawl_search\\` and \\`firecrawl_find_tools\\` can discover providers for the same fields across several pages; a matching provider returns typed records in one call.\n\nWith \\`alexandria\\` in place of \\`url\\`, the tool runs catalogued provider capabilities instead of fetching a page. Provider discovery and execution require an API key on a team with Alexandria enabled.\n",
+              "\n\n\\`firecrawl_search\\` and \\`firecrawl_find_tools\\` can discover providers for the same fields across several pages; a matching Alexandria provider returns typed records in one call.\n\nAlexandria mode: \\`alexandria\\` selects catalogued capability execution and is mutually exclusive with \\`url\\`. Alexandria execution is billed per capability (pass includeCosts to firecrawl_find_tools to see prices if you need).\n",
               "\n"
             );
             if (c !== before) { modified = true; logs.push("alexandria-desc-strip-v2"); }
@@ -496,39 +496,47 @@ services:
               " Use firecrawl_search to find relevant results across the web and specialized indexes; authenticated searches also return matching Alexandria providers in data.tools. firecrawl_find_tools provides catalogue browsing and provider contracts; firecrawl_scrape with an alexandria body executes a selected capability; firecrawl_scrape with a url retrieves one supplied page.",
               " Use firecrawl_search to find relevant results across the web and specialized indexes. firecrawl_scrape with a url retrieves one supplied page."
             );
+            // (research-filter sentence kept 2026-10-23: categories:
+            //     ["research"] is a LIVE SearXNG query rewrite on the
+            //     self-host api -- verified 2 results returned. Official
+            //     wording stays.)
+            // Billing: delete the whole sentence (user ruling 2026-10-23:
+            //     billing text is cloud-only and meaningless to the model
+            //     on a self-host stack; removing wholesale also shrinks the
+            //     drift surface vs a rewrite).
             c = c.replace(
-              " For a biomedical, life-science, clinical, or arXiv literature question, the firecrawl_research_* tools search the paper index, while categories: [\"research\"] on firecrawl_search filters ordinary web results to research-affiliated websites. Use the firecrawl_research_* tools to search academic and research literature, expand from anchor papers via the citation graph, and read full-text passages from a specific paper. Search and discovery tools are read-only and return ranked results.",
-              " Use the firecrawl_research_* tools to search academic and research literature, expand from anchor papers via the citation graph, and read full-text passages from a specific paper."
-            );
-            // Billing line keeps the gov-search free note (gov restored);
-            //     only the dead Alexandria-discovery prices clause goes.
-            c = c.replace(
-              "; Alexandria discovery (firecrawl_search with sources [\"alexandria\"] alone, and firecrawl_find_tools) is free; firecrawl_scrape is billed, as a page retrieval in url mode or per executed capability in alexandria mode (pass includeCosts to firecrawl_find_tools to see prices).",
-              ". firecrawl_scrape is billed per retrieved page in url mode."
+              " Billing: web, developer, and research search are billed per request; government search is free; Alexandria discovery (firecrawl_search with sources [\"alexandria\"] alone, and firecrawl_find_tools) is free; firecrawl_scrape is billed, as a page retrieval in url mode or per executed capability in alexandria mode (pass includeCosts to firecrawl_find_tools to see prices).",
+              ""
             );
 
-            // 15k. ALEXANDRIA_SEARCH_INSTRUCTIONS is compile-time folded into
-            //     SEARCH_PROFILE_INSTRUCTIONS, so blanking the const alone
-            //     does not undo the Alexandria catalogue copy already inlined
-            //     in the live description. Rewrite the SEARCH_PROFILE template
-            //     as a whole with the stripped wording. SEARCH_PROFILE serves
-            //     the mcp-search endpoint profile we do not expose, but the
-            //     description is still end-user visible via
-            //     firecrawl_search toolDetail=full. The replacement text must
-            //     already be the 15j-rewritten wording: any sentence here that
-            //     still matches a 15j needle gets stripped again on a second
-            //     run, breaking restart idempotency (container restart re-runs
-            //     this script on the already-patched dist). The end anchor
-            //     must be the statement terminator + the following var name:
-            //     anchoring on a prose sentence inside the template lets a
-            //     non-greedy [^]*? run away into a later object literal when
-            //     upstream rewords the tail (observed on 3.33.4: the template
-            //     ends with the billing sentence, not the id sentence, so the
-            //     old anchor ate ~200 lines down into a tool registration).
+            // 15k. (rewritten 2026-10-23) SEARCH_PROFILE_INSTRUCTIONS used
+            //     to be blob-rewritten as a whole; that dropped live gov /
+            //     research wording together with the dead Alexandria copy
+            //     and rewrote the billing line for no functional reason.
+            //     Now three surgical replaces instead, keeping everything
+            //     else byte-official:
+            //       a) enum tail: drop the Alexandria provider claim, keep
+            //          government in the enumeration (gov tool is live).
+            //          Needle ends before the period so the sentence
+            //          boundary survives ("...research search. Use ...").
             c = c.replace(
-              /var SEARCH_PROFILE_INSTRUCTIONS = ALEXANDRIA_SEARCH_INSTRUCTIONS \+ `[^]*?`;\nvar SEARCH_PROFILE_TOOLS/,
-              "var SEARCH_PROFILE_INSTRUCTIONS = ` Firecrawl provides web, developer, and research search. Use firecrawl_search to find relevant results across the web and specialized indexes. firecrawl_scrape with a url retrieves one supplied page. For a programming question, firecrawl_developer_search searches indexed public repositories, GitHub issues, merged pull requests, READMEs, and code documentation and returns the matched passages, and skills: \"only\" narrows it to agent-skill files; firecrawl_search with categories: [\"developer\"] reaches the same index beside ordinary web results, returning the hits in the web group rather than as passages and offering no skills filter. Use the firecrawl_research_* tools to search academic and research literature, expand from anchor papers via the citation graph, and read full-text passages from a specific paper. Billing: web, developer, and research search are billed per request; government search is free. firecrawl_scrape is billed per retrieved page. Returns result groups in \\`data\\` and an operation \\`id\\`.\n\n`;\nvar SEARCH_PROFILE_TOOLS"
+              ", and executes catalogued Alexandria data providers",
+              ""
             );
+            //       b) gov tail: categories:["gov"] is a silent-empty dead
+            //          pointer on the self-host api (verified 2026-10-23:
+            //          HTTP 200 with data.web: []). The preceding sentence
+            //          already names firecrawl_gov_search, so the tail just
+            //          collapses to a period. (web-group variant here; the
+            //          plain variant is handled in 15e.)
+            c = c.replace(
+              "; firecrawl_search with categories: [\"gov\"] reaches the same sources in the web group and cannot be combined with other categories.",
+              "."
+            );
+            //       c) billing sentence: handled by the 15j replace above
+            //          (single occurrence in this blob).
+            //     ALEXANDRIA_SEARCH_INSTRUCTIONS prefix const is blanked by
+            //     15a, so the "+ `...`" template shape stays official.
 
             // 15l. searchQueryIsValid refine error message in the live
             //     firecrawl_search tool still points at the disabled
@@ -537,6 +545,15 @@ services:
             c = c.replace(
               "A query is required. Use firecrawl_find_tools to browse the catalogue.",
               "A query is required."
+            );
+
+            // 15m. scrapeOptions billing clause: "billed as a scrape" is
+            //     cloud metering text, meaningless on a self-host stack
+            //     (user ruling 2026-10-23). Drop only the clause; the
+            //     functional guidance (full-page fetch per result) stays.
+            c = c.replace(
+              ", and each fetched result is billed as a scrape",
+              ""
             );
 
             if (c !== before) { modified = true; logs.push("instr-desc-strip"); }
