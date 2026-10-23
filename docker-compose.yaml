@@ -358,8 +358,9 @@ services:
           //     what the execute body reads below. Lost for this one call:
           //     axios retries and the 300s timeout -- acceptable for a
           //     free cloud lookup. \x60 keeps raw backticks out of this
-          //     single-quoted body per the sh transport rule; $${...} is
-          //     compose-escaped so the written needle keeps ${...}.
+          //     single-quoted body per the sh transport rule; the two-char
+          //     $$ form inside needles is compose-escape and lands as a
+          //     single $ once compose interpolates.
           if (c.includes("const res = await client.http.get(\n        \x60$${BASE2}?$${params.toString()}\x60,\n        originHeaders(requestOrigin(mcpClient, session))\n      );")) {
             c = c.replace(
               "const res = await client.http.get(\n        \x60$${BASE2}?$${params.toString()}\x60,\n        originHeaders(requestOrigin(mcpClient, session))\n      );",
