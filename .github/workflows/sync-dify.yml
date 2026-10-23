@@ -136,19 +136,29 @@ jobs:
               sys.exit(1)
           PYEOF
 
-          # 反向断言优先于正向哨兵：清洗后的产物不得含 certresolver / env_file /
-          # 宿主端口映射（正向哨兵可能被注释行骗过——netbird 教训）
+          # 反向断言优先于正向哨兵：清洗后的产物不得含 certresolver / 宿主端口映射
+          #（正向哨兵可能被注释行骗过——netbird 教训）
           for bad in \
             "certresolver" \
             "myresolver" \
             "tls.domains" \
-            "env_file" \
             "published" ; do
             grep -qF "$bad" docker-compose.merged.tmp.yaml && {
               echo "::error::merged config unexpectedly contains '$bad'"
               exit 1
             }
           done
+          # env_file 结构性清零（config 输出会原样回显 x- 锚点块，grep 会误伤，
+          # 必须按 services.* 逐个断言——叠加在上方 smoke test 之前的硬闸）
+          python3 - <<'PYEOF'
+          import yaml, sys
+          d = yaml.safe_load(open('docker-compose.merged.tmp.yaml'))
+          offenders = [k for k, v in d.get('services', {}).items() if v.get('env_file')]
+          if offenders:
+              print(f'::error::services still carrying env_file: {offenders}')
+              sys.exit(1)
+          print('no service-level env_file (anchor echo is harmless)')
+          PYEOF
 
           # 哨兵检查：上游若改了我们 override 依赖的东西，大声失败而不是部署坏配置。
           #（只用短 token——生成文件会折叠长行；含 ${} 的 needle 必须单引号，
