@@ -136,20 +136,20 @@ jobs:
               sys.exit(1)
           PYEOF
 
-          # 反向断言优先于正向哨兵：清洗后的产物不得含 certresolver / 宿主端口映射
+          # 反向断言优先于正向哨兵：清洗后的产物不得含 certresolver
           #（正向哨兵可能被注释行骗过——netbird 教训）
           for bad in \
             "certresolver" \
             "myresolver" \
-            "tls.domains" \
-            "published" ; do
+            "tls.domains" ; do
             grep -qF "$bad" docker-compose.merged.tmp.yaml && {
               echo "::error::merged config unexpectedly contains '$bad'"
               exit 1
             }
           done
-          # env_file 结构性清零（config 输出会原样回显 x- 锚点块，grep 会误伤，
-          # 必须按 services.* 逐个断言——叠加在上方 smoke test 之前的硬闸）
+          # 结构闸 1：env_file 清零；结构闸 2：默认启动的服务不得有宿主端口映射
+          #（config 输出会原样回显 x- 锚点块与 profile 服务（如 nginx 的 80/443），
+          #  字面 grep 会误伤，必须按 services.* 逐个断言）
           python3 - <<'PYEOF'
           import yaml, sys
           d = yaml.safe_load(open('docker-compose.merged.tmp.yaml'))
@@ -158,6 +158,12 @@ jobs:
               print(f'::error::services still carrying env_file: {offenders}')
               sys.exit(1)
           print('no service-level env_file (anchor echo is harmless)')
+          port_offenders = [k for k, v in d.get('services', {}).items()
+                            if v.get('ports') and not v.get('profiles')]
+          if port_offenders:
+              print(f'::error::default-startup services with host port mapping: {port_offenders}')
+              sys.exit(1)
+          print('no host port mapping on default-startup services')
           PYEOF
 
           # 哨兵检查：上游若改了我们 override 依赖的东西，大声失败而不是部署坏配置。
