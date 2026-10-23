@@ -193,6 +193,8 @@ services:
           return r;
         }
 
+        const backtick = "\x60";
+
         const bang = "**SearXNG !bang:** prefix the query to pick a source category: !science (papers/academic), !it (programming), !general (default web), !news, !images. For academic or research queries ALWAYS prefix with !science instead of adding keywords like \"research paper\" to the query. Example: \"!science continuous glucose monitoring sensor accuracy\".";
 
         const cleanDesc = "LLM-based cleaning pass that removes residual boilerplate (cookie banners, ads, social widgets, breadcrumbs, comments) that onlyMainContent misses. Preserves headings, lists, tables, code blocks, links. Can combine with onlyMainContent. Auto-skipped (preserving original) if content exceeds model token limit. Recommended to enable for complex structured websites when speed is not critical. If the returned content is unexpectedly short or seems to be missing key content, try disabling this option and re-scraping.";
@@ -419,10 +421,10 @@ services:
           //     single-quoted body per the sh transport rule; the two-char
           //     $$ form inside needles is compose-escape and lands as a
           //     single $ once compose interpolates.
-          if (c.includes("const res = await client.http.get(\n        \x60$${BASE2}?$${params.toString()}\x60,\n        originHeaders(requestOrigin(mcpClient, session))\n      );")) {
+          if (c.includes("const res = await client.http.get(\n        " + backtick + "$" + "{BASE2}?" + "$" + "{params.toString()}" + backtick + ",\n        originHeaders(requestOrigin(mcpClient, session))\n      );")) {
             c = c.replace(
-              "const res = await client.http.get(\n        \x60$${BASE2}?$${params.toString()}\x60,\n        originHeaders(requestOrigin(mcpClient, session))\n      );",
-              "const res = await fetch(\n        \x60$${BASE2}?$${params.toString()}\x60\n      ).then(async (r) => ({ data: await r.json() }));"
+              "const res = await client.http.get(\n        " + backtick + "$" + "{BASE2}?" + "$" + "{params.toString()}" + backtick + ",\n        originHeaders(requestOrigin(mcpClient, session))\n      );",
+              "const res = await fetch(\n        " + backtick + "$" + "{BASE2}?" + "$" + "{params.toString()}" + backtick + "\n      ).then(async (r) => ({ data: await r.json() }));"
             );
             modified = true; logs.push("gov-fetch-bypass");
           }
