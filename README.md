@@ -26,7 +26,8 @@
 | `INIT_PASSWORD` | 首个管理员账号初始密码 |
 | `DB_PASSWORD` | postgres 密码 |
 | `REDIS_PASSWORD` | redis 密码 |
-| `WEAVIATE_API_KEY` | weaviate API key，`openssl rand -hex 24` 生成 |
+| `WEAVIATE_API_KEY` | dify api 侧连接 weaviate 的 key，`openssl rand -hex 24` 生成 |
+| `WEAVIATE_AUTHENTICATION_APIKEY_ALLOWED_KEYS` | weaviate 服务端允许的 key 列表，与上行同值 |
 
 其余变量照抄 `.env.example`（上游全部变量带默认值，按需覆盖）。域名相关的
 `CONSOLE_API_URL` / `CONSOLE_WEB_URL` / `SERVICE_API_URL` / `APP_API_URL` /
