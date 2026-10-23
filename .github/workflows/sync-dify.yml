@@ -128,9 +128,11 @@ jobs:
                   sys.exit(1)
               print(f'pin_mode={pin_mode}: pinned {lit}@{digest} ({n} 处)')
           open('docker-compose.merged.tmp.yaml', 'w').write(t)
+          # 上游 compose 自带个别 digest 钉版（非我们镜像），期望总数 = 7 + 上游自带数
+          base = open('docker-compose.upstream.yaml').read().count('@sha256:')
           n = t.count('@sha256:')
-          if n != 7:
-              print(f'::error::expected 7 pinned image refs in merged config, got {n}')
+          if n != 7 + base:
+              print(f'::error::expected {7 + base} pinned image refs in merged config (7 ours + {base} upstream), got {n}')
               sys.exit(1)
           PYEOF
 
@@ -197,7 +199,9 @@ jobs:
           t = open('docker-compose.yaml').read()
           missing = [v for v in ('${JCR_REGISTRY}', '${DIFY_DOMAIN}') if v not in t]
           assert not missing, f"missing env templates: {missing}"
-          assert t.count('@sha256:') == 7, f"expected 7 pinned image refs, got {t.count('@sha256:')}"
+          base = open('docker-compose.upstream.yaml').read().count('@sha256:')
+          assert t.count('@sha256:') == 7 + base, \
+              f"expected {7 + base} pinned image refs (7 ours + {base} upstream), got {t.count('@sha256:')}"
           print('merged structure OK: yaml parses, core services present, env templates intact, 7 pinned refs')
           PYEOF
 
