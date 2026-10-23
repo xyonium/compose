@@ -164,7 +164,9 @@ services:
   # MCP server（原 stack 270 迁入）。与 api 同栈后走内部网络直连，不再绕公网。
   # 服务名与容器名统一为 firecrawl-mcp，避免裸名 mcp 与 mcpo 容器在共享网络上撞名。
   # traefik 规则保持旧路径不变：/v2/mcp 是新版原生端点；/mcp 由
-  # mcp-legacy-to-v2 中间件重写到 /v2/mcp；/sse + /messages 容器仍原生支持，直通。
+  # 3.33.4 起上游 mcp 只服务 /mcp（/v2/mcp 返回 404，已实测）——中间件反向：
+  # 把旧客户端的 /v2/mcp 重写到 /mcp；/mcp、/sse、/messages 原生直通。
+  # （3.23 时代曾正向重写 /mcp→/v2/mcp，上游路径策略翻转后必须跟着翻。）
   # 标签里的 $$ 是给 compose 部署期插值的转义，部署后 traefik 看到的是 $1。
   firecrawl-mcp:
     image: ${JCR_REGISTRY}/ghcr/firecrawl/firecrawl-mcp-server:latest
@@ -633,12 +635,12 @@ services:
       - "traefik.http.routers.mcp-fc.rule=Host(`${FIRECRAWL_DOMAIN}`) && (PathPrefix(`/v2/mcp`) || PathPrefix(`/mcp`) || PathPrefix(`/sse`) || PathPrefix(`/messages`))"
       - "traefik.http.routers.mcp-fc.entrypoints=websecure"
       - "traefik.http.routers.mcp-fc.tls=true"
-      - "traefik.http.routers.mcp-fc.middlewares=mcp-legacy-to-v2"
+      - "traefik.http.routers.mcp-fc.middlewares=mcp-v2-to-legacy"
       - "traefik.http.routers.mcp-fchttp.rule=Host(`${FIRECRAWL_DOMAIN}`) && (PathPrefix(`/v2/mcp`) || PathPrefix(`/mcp`) || PathPrefix(`/sse`) || PathPrefix(`/messages`))"
       - "traefik.http.routers.mcp-fchttp.entrypoints=web"
-      - "traefik.http.routers.mcp-fchttp.middlewares=http2https,mcp-legacy-to-v2"
-      - "traefik.http.middlewares.mcp-legacy-to-v2.replacepathregex.regex=^/mcp(/.*)?$$"
-      - "traefik.http.middlewares.mcp-legacy-to-v2.replacepathregex.replacement=/v2/mcp$$1"
+      - "traefik.http.routers.mcp-fchttp.middlewares=http2https,mcp-v2-to-legacy"
+      - "traefik.http.middlewares.mcp-v2-to-legacy.replacepathregex.regex=^/v2/mcp(/.*)?$$"
+      - "traefik.http.middlewares.mcp-v2-to-legacy.replacepathregex.replacement=/mcp$$1"
 
 networks:
   reverse-proxy:
