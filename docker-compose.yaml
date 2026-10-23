@@ -114,8 +114,16 @@ services:
         volume: {}
   firecrawl-mcp:
     command:
+      # 3.33.4 起上游镜像以 node(uid=1000) 运行且 /app/dist 属 root 不可写
+      # —— 先拷到 /app 内可写副本，patch 副本，再 exec 副本。用 /tmp/app-root
+      # 而不是 /app 内位置是因为 dist/index.js 有 require("../package.json")
+      # （模块 scope 判定），拷到 /app/dist-patched 会沿父目录读到 app/package.json，
+      # 而 /app 本身已带 package.json 会被误判为 pristine 副本。cp 整个 /app
+      # 到 /tmp/app-root 保证 package.json 跟随 dist 一起被解析。
+      # node_modules 本身属 root 无执行权限问题，直接用 /app/node_modules。
+      # 重启时 rm 重拷，保证 patch 总在 pristine 底子上跑、幂等不误伤。
       - |
-        node -e '
+        rm -rf /tmp/app-root && cp -r /app /tmp/app-root && node -e '
         const fs = require("fs"), path = require("path");
         function walk(d) {
           let r = [];
@@ -132,7 +140,7 @@ services:
         const cleanDesc = "LLM-based cleaning pass that removes residual boilerplate (cookie banners, ads, social widgets, breadcrumbs, comments) that onlyMainContent misses. Preserves headings, lists, tables, code blocks, links. Can combine with onlyMainContent. Auto-skipped (preserving original) if content exceeds model token limit. Recommended to enable for complex structured websites when speed is not critical. If the returned content is unexpectedly short or seems to be missing key content, try disabling this option and re-scraping.";
 
         let n = 0;
-        for (const f of walk("/app/dist")) {
+        for (const f of walk("/tmp/app-root/dist")) {
           let c = fs.readFileSync(f, "utf8");
           let modified = false;
           let logs = [];
@@ -538,7 +546,7 @@ services:
           }
         }
         console.log("Total patched: " + n);
-        ' && exec node dist/index.js
+        ' && exec node /tmp/app-root/dist/index.js
     container_name: firecrawl-mcp
     entrypoint:
       - sh
