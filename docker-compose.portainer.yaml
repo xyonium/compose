@@ -99,6 +99,8 @@ services:
   plugin_daemon:
     image: ${JCR_REGISTRY}/docker/langgenius/dify-plugin-daemon:0.6.11-local
     env_file: !reset null
+    # 摘掉上游的 debug 宿主端口映射，外部访问只走 traefik
+    ports: !reset null
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=reverse-proxy"
