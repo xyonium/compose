@@ -180,7 +180,7 @@ jobs:
             '${JCR_REGISTRY}/docker/semitechnologies/weaviate' \
             "SECRET_KEY" \
             "DB_PASSWORD" \
-            "WEAVIATE_API_KEY" \
+            "WEAVIATE_AUTHENTICATION_APIKEY_ALLOWED_KEYS" \
             "reverse-proxy" \
             "traefik.enable" \
             "tls=true" \
