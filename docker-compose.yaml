@@ -1,0 +1,59 @@
+name: aria2
+networks:
+  internal:
+    driver: bridge
+    name: aria2_internal
+  reverse-proxy:
+    external: true
+    name: reverse-proxy
+services:
+  Aria2-Pro:
+    container_name: aria2-pro
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK_SET=022
+      - RPC_SECRET=${ARIA2_RPC_SECRET}
+      - RPC_PORT=6800
+      - LISTEN_PORT=6888
+      - DISK_CACHE=64M
+      - IPV6_MODE=true
+      - UPDATE_TRACKERS=true
+      - CUSTOM_TRACKER_URL=
+      - TZ=Asia/Shanghai
+    image: ${JCR_REGISTRY}/docker/p3terx/aria2-pro:latest@sha256:086d1a37c586edb07ec0fb956bf9edd89d1d38d138ad5309ff96d510c8c9a011
+    logging:
+      driver: json-file
+      options:
+        max-size: 1m
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - source: /${ARIA2_CONFIG_DIR}
+        target: /config
+        type: bind
+      - source: /${ARIA2_DOWNLOADS_DIR}
+        target: /downloads
+        type: bind
+  AriaNg:
+    command: --port 6880 --ipv6
+    container_name: ariang
+    environment:
+      - VIRTUAL_HOST=aria.lan,${ARIA2_DOMAIN}
+      - VIRTUAL_PORT=6880
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    image: ${JCR_REGISTRY}/docker/p3terx/ariang:latest@sha256:a0c8e6be2194353e2e34cd04611f7f62654a6a9ea0ec7d1b702fbb4143f095fd
+    logging:
+      driver: json-file
+      options:
+        max-size: 1m
+    networks:
+      internal: null
+      reverse-proxy: null
+    ports:
+      - mode: ingress
+        protocol: tcp
+        published: "6880"
+        target: 6880
+    restart: unless-stopped
