@@ -44,10 +44,12 @@ services:
       # 当公网反代节点经端口转发回源部署主机 traefik 时，需在平台 env 追加该节点公网 IP/32，
       # 否则 ak-axum 的 rightmost_untrusted_x_forwarded_for 会停在公网反代节点 IP
       AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS: ${AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS:-127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fe80::/10,::1/128}
-    # 以 root 启动：镜像的 /lifecycle/ak 在 root 下会先 chown -R /data，再
-    # setpriv 降权到 authentik(1000) 运行 server。命名卷 + nocopy 的卷根是
-    # root，必须靠这段初始化，否则 uid 1000 建不了 /data/media。
-    user: "0:0"
+    # 首次空卷（或恢复成空卷）时，如果想不依赖 worker、让 server 自己先把卷根
+    # chown 给 1000，取消下面这行的注释：镜像的 /lifecycle/ak 在 root 下会
+    # chown -R /data 再 setpriv 降权到 authentik(1000)。初始化完成后/常规运行
+    # 保持注释即可。注：worker 上游是 user: root，启动和 healthcheck 本来就会
+    # chown -R /data，所以通常不需要这行。
+    # user: "0:0"
     # 不暴露宿主端口（清掉上游的 ${COMPOSE_PORT_HTTP/HTTPS} 映射），
     # 外部访问走 traefik；容器 9000 经 reverse-proxy 网络可达
     ports: !reset null

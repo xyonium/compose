@@ -33,10 +33,11 @@
 - `./data` 绑定挂载转命名卷 `data`（server/worker 共享，实际卷名恒为 `authentik_data`）；
   **命名卷必须配 `nocopy`**：镜像里 `/data/media` 是指向 `/media` 的旧版兼容链接，
   命名卷首次创建默认会把镜像 `/data` 的内容（含这个链接）复制进卷，上传就会写进
-  容器可写层、容器重建即丢；`nocopy` 关掉复制后空卷根是 root，所以 server 用
-  `user: "0:0"` 启动，让镜像的 `/lifecycle/ak` 先 `chown -R /data` 再 `setpriv`
-  降权到 1000（worker 上游本来就是 root，同样会 chown）。已有旧卷若还带这个链接，
-  升级时在容器内以 root 执行一次
+  容器可写层、容器重建即丢；`nocopy` 关掉复制后空卷根是 root。server 默认仍以镜像的
+  1000 运行；首次空卷若想让 server 自己初始化，临时打开 override 里注释掉的
+  `user: "0:0"`（`/lifecycle/ak` 会 `chown -R /data` 再 `setpriv` 降权到 1000），
+  初始化完再注释回去。worker 上游是 root，启动和 healthcheck 本来就会
+  `chown -R /data`，所以通常不依赖这行。已有旧卷若还带这个链接，升级时在容器内以 root 执行一次
   `rm /data/media && mv /media /data/media && chown -R 1000:1000 /data/media`；
   `./custom-templates`、`./certs` 两个挂载去掉（自定义模板/证书需要时改 override 加回）；
   worker 的 `/var/run/docker.sock` 保留（上游默认，managed outpost 要用）
