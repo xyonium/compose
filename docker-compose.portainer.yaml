@@ -16,7 +16,7 @@ name: aria2
 
 services:
   Aria2-Pro:
-    image: ${JCR_REGISTRY}/docker/p3terx/aria2-pro
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/p3terx/aria2-pro
     environment:
       - PUID=1000
       - PGID=1000
@@ -38,7 +38,7 @@ services:
         target: /downloads
 
   AriaNg:
-    image: ${JCR_REGISTRY}/docker/p3terx/ariang
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/p3terx/ariang
     # 清掉上游的 network_mode: host，改走 bridge 双网络接 nginx-proxy
     network_mode: !reset null
     networks:

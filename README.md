@@ -19,7 +19,7 @@ docker-compose.yml 外与上游完全一致，迁移后旧仓库可删除）。
 | 变量 | 说明 |
 |---|---|
 | `ARIA2_DOMAIN` | 对外域名，如 `aria.example.com`（不带 scheme） |
-| `JCR_REGISTRY` | 私服 mirror 主机名（不带前导/后缀 `/`） |
+| `JCR_REGISTRY` | 私服 mirror 主机名（不带前导/后缀 `/`）。**可不设**：不设/空串时镜像回落 docker.io 官方源 |
 | `ARIA2_RPC_SECRET` | aria2 RPC 密钥，`openssl rand -hex 16` 生成；上游默认 `P3TERX` 是公开弱口令，必须设 |
 | `ARIA2_CONFIG_DIR` | aria2 配置目录，**不带前导 `/`**，如 `root/aria2-config` |
 | `ARIA2_DOWNLOADS_DIR` | 下载目录，**不带前导 `/`**，如 `root/nfs/Video/videotmp` |
