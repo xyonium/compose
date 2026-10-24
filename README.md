@@ -48,7 +48,7 @@
 | 变量 | 说明 | 形态示例 |
 |---|---|---|
 | `AUTHENTIK_DOMAIN` 🆕 | **必填**，对外访问域名。compose 内 2 条 traefik Host 路由（websecure 主路由 + web 跳转路由）由它派生 | `sso.company.example` |
-| `JCR_REGISTRY` 🆕 | **必填**，私服镜像 mirror 主机名。**只写主机名**（不带协议不带路径）；3 个镜像 ref 为 `${JCR_REGISTRY}/ghcr/…`、`${JCR_REGISTRY}/docker/…` | `registry.company.example` |
+| `JCR_REGISTRY` 🆕 | 私服镜像 mirror 主机名。**只写主机名**（不带协议不带路径）。**可不设**：不设/空串时镜像回落 ghcr.io / docker.io 官方源 | `registry.company.example` |
 | `PG_PASS` | **必填**（上游 `:?` 断言，不设拒绝启动），postgresql 超级用户密码；`openssl rand -hex 32` 生成 | |
 | `AUTHENTIK_SECRET_KEY` | **必填**（上游 `:?` 断言），authentik 加密密钥（session/凭据加密），丢失 = 所有加密数据不可解，务必备份；`openssl rand -base64 60 \| tr -d '\n'` 生成 | |
 | `PG_DB` / `PG_USER` | 可选，默认都是 `authentik` | |
