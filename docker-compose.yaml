@@ -21,7 +21,7 @@ services:
       - UPDATE_TRACKERS=true
       - CUSTOM_TRACKER_URL=
       - TZ=Asia/Shanghai
-    image: ${JCR_REGISTRY}/docker/p3terx/aria2-pro:latest@sha256:086d1a37c586edb07ec0fb956bf9edd89d1d38d138ad5309ff96d510c8c9a011
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/p3terx/aria2-pro:latest@sha256:086d1a37c586edb07ec0fb956bf9edd89d1d38d138ad5309ff96d510c8c9a011
     logging:
       driver: json-file
       options:
@@ -43,7 +43,7 @@ services:
       - VIRTUAL_PORT=6880
     extra_hosts:
       - host.docker.internal:host-gateway
-    image: ${JCR_REGISTRY}/docker/p3terx/ariang:latest@sha256:a0c8e6be2194353e2e34cd04611f7f62654a6a9ea0ec7d1b702fbb4143f095fd
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/p3terx/ariang:latest@sha256:a0c8e6be2194353e2e34cd04611f7f62654a6a9ea0ec7d1b702fbb4143f095fd
     logging:
       driver: json-file
       options:
