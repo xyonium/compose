@@ -13,11 +13,13 @@ compose/文档/workflow 前先过这一关：
    在 `docker-compose.portainer.yaml` 里写成 `${VAR}`，由部署平台项目 env 注入；
    分支 README 放凭据表列出。机器人 sync 时 `--no-interpolate` 保留模板
    （范式见 netbird 分支及其 README 的 5 env 表）。
-   **registry 前缀变量必须带默认值**（2026-10-24 起）：docker hub 镜像写
-   `${DOCKER_REGISTRY:-docker.io}/<repo>`，ghcr 镜像写 `${GHCR_REGISTRY:-ghcr.io}/<repo>`。
-   不用私仓的部署留空即回落官方源；用私仓的在项目 env 设
-   `DOCKER_REGISTRY=<mirror>/docker`、`GHCR_REGISTRY=<mirror>/ghcr`。
-   旧 `${JCR_REGISTRY}` 写法已废弃，改到就顺手迁移。
+   **registry 用条件前缀，JCR_REGISTRY 可不设**（2026-10-24 起，compose 插值
+   `:-`/`+` 组合，已在 runner 实测）：docker hub 镜像写
+   `${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/<repo>`，ghcr 镜像写
+   `${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/<repo>`。
+   不设/空串 → `docker.io/<repo>`、`ghcr.io/<repo>`（官方源）；
+   设了 mirror → `<mirror>/docker/<repo>`、`<mirror>/ghcr/<repo>`（与旧写法完全一致，
+   存量部署零改动）。
 2. **文档用占位符**：人类读的 README/spec/历史文档里，域名一律写
    `*.example.com`（RFC 2606），registry 写 `${JCR_REGISTRY}` 或泛称「私服 mirror」,
    主机名写「部署主机/边界防火墙」。历史文档出现真实域名是旧账，改到就顺手洗掉。

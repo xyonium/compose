@@ -58,7 +58,7 @@ Arcane 里的项目内容以本仓库为准）。
 
 1. `git checkout --orphan <project> && git rm -rf .`
 2. 下载上游 compose 为 `docker-compose.upstream.yaml`
-3. 写 `docker-compose.portainer.yaml`（镜像走 `${JCR_REGISTRY}/{ghcr,docker}/` mirror（按安全原则 env 化）、
+3. 写 `docker-compose.portainer.yaml`（镜像走 `${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/` 或 `${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/` 条件前缀（不设 JCR_REGISTRY 回落官方源）、
    traefik 接 `reverse-proxy` 外部网络、顶层 `name:` 固定项目名、按需改卷、
    上游的 `env_file: .env` 记得清掉）。
    **traefik 标签按部署主机的固定证书风格写**（主机名不入库）：websecure 入口
