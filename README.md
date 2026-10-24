@@ -31,6 +31,13 @@
   只能 env 配**（官方口径），而清了 env_file 后平台 env 只做插值不进容器，必须显式透传；
   值仍由平台项目 env 注入，不进 git
 - `./data` 绑定挂载转命名卷 `data`（server/worker 共享，实际卷名恒为 `authentik_data`）；
+  **命名卷必须配 `nocopy`**：镜像里 `/data/media` 是指向 `/media` 的旧版兼容链接，
+  命名卷首次创建默认会把镜像 `/data` 的内容（含这个链接）复制进卷，上传就会写进
+  容器可写层、容器重建即丢；`nocopy` 关掉复制后空卷根是 root，所以 server 用
+  `user: "0:0"` 启动，让镜像的 `/lifecycle/ak` 先 `chown -R /data` 再 `setpriv`
+  降权到 1000（worker 上游本来就是 root，同样会 chown）。已有旧卷若还带这个链接，
+  升级时在容器内以 root 执行一次
+  `rm /data/media && mv /media /data/media && chown -R 1000:1000 /data/media`；
   `./custom-templates`、`./certs` 两个挂载去掉（自定义模板/证书需要时改 override 加回）；
   worker 的 `/var/run/docker.sock` 保留（上游默认，managed outpost 要用）
 - 顶层 `name: authentik` 固定项目名：数据卷不随平台项目名变化，重建项目自动挂回

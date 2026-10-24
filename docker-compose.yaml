@@ -66,11 +66,13 @@ services:
       reverse-proxy: null
     restart: unless-stopped
     shm_size: 512mb
+    user: "0:0"
     volumes:
       - source: data
         target: /data
         type: volume
-        volume: {}
+        volume:
+          nocopy: true
   worker:
     command: worker
     depends_on:
@@ -106,7 +108,8 @@ services:
       - source: data
         target: /data
         type: volume
-        volume: {}
+        volume:
+          nocopy: true
 volumes:
   data:
     name: authentik_data

@@ -44,12 +44,23 @@ services:
       # 当公网反代节点经端口转发回源部署主机 traefik 时，需在平台 env 追加该节点公网 IP/32，
       # 否则 ak-axum 的 rightmost_untrusted_x_forwarded_for 会停在公网反代节点 IP
       AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS: ${AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS:-127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fe80::/10,::1/128}
+    # 以 root 启动：镜像的 /lifecycle/ak 在 root 下会先 chown -R /data，再
+    # setpriv 降权到 authentik(1000) 运行 server。命名卷 + nocopy 的卷根是
+    # root，必须靠这段初始化，否则 uid 1000 建不了 /data/media。
+    user: "0:0"
     # 不暴露宿主端口（清掉上游的 ${COMPOSE_PORT_HTTP/HTTPS} 映射），
     # 外部访问走 traefik；容器 9000 经 reverse-proxy 网络可达
     ports: !reset null
-    # !override 整体替换上游 volumes：./data 转命名卷；不再挂 ./custom-templates
+    # !override 整体替换上游 volumes：./data 转命名卷；不再挂 ./custom-templates。
+    # nocopy：命名卷首次创建时不要把镜像 /data 里的 media -> /media 兼容链接
+    # 复制进卷（否则上传会写进容器可写层，容器重建即丢）。空卷由上面的 root
+    # entrypoint chown 后即可写。
     volumes: !override
-      - data:/data
+      - type: volume
+        source: data
+        target: /data
+        volume:
+          nocopy: true
     networks:
       # 上游没写 networks（隐式 default），一旦这里显式列出就不会再自动补 default——
       # 必须显式写上 default，否则 server 到不了 postgresql（同 technitium 的写法）
@@ -84,10 +95,15 @@ services:
       AUTHENTIK_EMAIL__TIMEOUT: ${AUTHENTIK_EMAIL__TIMEOUT:-10}
       AUTHENTIK_EMAIL__FROM: ${AUTHENTIK_EMAIL__FROM:-}
     # !override 整体替换：保留 docker.sock（managed outpost 需要），
-    # ./data 转命名卷；不再挂 ./certs、./custom-templates
+    # ./data 转命名卷；不再挂 ./certs、./custom-templates。
+    # data 同样 nocopy：否则 worker 先启动时会把兼容链接复制进同一个卷。
     volumes: !override
       - /var/run/docker.sock:/var/run/docker.sock
-      - data:/data
+      - type: volume
+        source: data
+        target: /data
+        volume:
+          nocopy: true
 
   postgresql:
     image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/library/postgres:16-alpine
