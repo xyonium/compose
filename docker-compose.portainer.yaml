@@ -1,0 +1,60 @@
+# 部署平台自定义层：与上游 docker-compose.upstream.yaml 合并使用
+# 合并产物 docker-compose.yaml 由 main 分支的 sync-aria2.yml 工作流生成
+#（bot 维护，勿手改）；要调整部署只改本文件。
+#
+# 自定义内容（2026-10-24 迁移入 compose 仓库，按安全原则：域名/registry/宿主路径
+# 一律 env 模板化，真实值由部署平台项目 env 注入）：
+#   1. 镜像走私服 mirror（${JCR_REGISTRY} 的 docker hub 代理）
+#   2. 反代走部署主机既有 nginx-proxy（VIRTUAL_HOST 约定，不是 traefik），
+#      域名 ${ARIA2_DOMAIN} 走项目 env，aria.lan 内网别名保留
+#   3. RPC_SECRET 改 ${ARIA2_RPC_SECRET}（上游默认 P3TERX 是公开弱口令，必须设）
+#   4. 宿主 bind 路径 env 化：长语法 source: /${VAR}（compose-go 归一化 bug，
+#      短语法会被误判 named volume；env 值不带前导 /，展开 //root/... 可容忍）
+#   5. 固定项目名 aria2
+
+name: aria2
+
+services:
+  Aria2-Pro:
+    image: ${JCR_REGISTRY}/docker/p3terx/aria2-pro
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK_SET=022
+      - RPC_SECRET=${ARIA2_RPC_SECRET}
+      - RPC_PORT=6800
+      - LISTEN_PORT=6888
+      - DISK_CACHE=64M
+      - IPV6_MODE=true
+      - UPDATE_TRACKERS=true
+      - CUSTOM_TRACKER_URL=
+      - TZ=Asia/Shanghai
+    volumes:
+      - type: bind
+        source: /${ARIA2_CONFIG_DIR}
+        target: /config
+      - type: bind
+        source: /${ARIA2_DOWNLOADS_DIR}
+        target: /downloads
+
+  AriaNg:
+    image: ${JCR_REGISTRY}/docker/p3terx/ariang
+    # 清掉上游的 network_mode: host，改走 bridge 双网络接 nginx-proxy
+    network_mode: !reset null
+    networks:
+      - internal
+      - reverse-proxy
+    ports:
+      - 6880:6880
+    environment:
+      - VIRTUAL_HOST=aria.lan,${ARIA2_DOMAIN}
+      - VIRTUAL_PORT=6880
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+networks:
+  internal:
+    driver: bridge
+  reverse-proxy:
+    name: reverse-proxy
+    external: true
