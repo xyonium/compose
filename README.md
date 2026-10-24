@@ -13,6 +13,7 @@
 | [`netbird`](https://github.com/xyonium/compose/tree/netbird) | [netbirdio/netbird](https://github.com/netbirdio/netbird) | （已脱敏） | （域名走 env，不入库） | VPN + Agent Network（2026-10 安全清洗重建、单 commit 起点；上游无静态 compose：Action source 官方 getting-started.sh 渲染生成，option 1 出 base、option 0 提取 proxy 片段为第二个 upstream 文件；域名/私仓/证书路径全走项目 env，分支零敏感信息） |
 | [`n8n`](https://github.com/xyonium/compose/tree/n8n) | [n8n-io/n8n-hosting](https://github.com/n8n-io/n8n-hosting) | （已脱敏） | （域名走 env，不入库） | 工作流自动化（2026-10-23 自 xyonium/n8n-hosting 迁入、单 commit 起点；上游 compose 在 docker-compose/withPostgresAndWorker/；域名/registry 走项目 env `N8N_DOMAIN`/`JCR_REGISTRY`；n8n 与 runners 两镜像钉 digest；postgres 冻结 16-alpine 匹配线上卷；traefik 固定证书风格，无 certresolver） |
 | [`dify`](https://github.com/xyonium/compose/tree/dify) | [langgenius/dify](https://github.com/langgenius/dify) | （已脱敏） | （域名走 env，不入库） | LLM 应用平台（2026-10-23 自 xyonium/dify 迁入、单 commit 起点；上游 compose 在 docker/docker-compose.yaml；域名/registry 走项目 env `DIFY_DOMAIN`/`JCR_REGISTRY`；dify-api/web/plugin-daemon 三镜像钉 digest、tag 跟随上游版本由版本漂移哨兵兜底；向量库走 weaviate profile；traefik 固定证书风格，无 certresolver） |
+| [`aria2`](https://github.com/xyonium/compose/tree/aria2) | [P3TERX/Aria2-Pro-Docker](https://github.com/P3TERX/Aria2-Pro-Docker) | （已脱敏） | （域名走 env，不入库） | 下载器 + AriaNg（2026-10-24 自 xyonium/Aria2-Pro-Docker 迁入、单 commit 起点；域名/registry/RPC密钥/宿主bind路径走项目 env `ARIA2_DOMAIN`/`JCR_REGISTRY`/`ARIA2_RPC_SECRET`/`ARIA2_CONFIG_DIR`/`ARIA2_DOWNLOADS_DIR`；反代走部署主机 nginx-proxy VIRTUAL_HOST 机制；两镜像钉 digest） |
 
 部署细节（项目 env 必填项、切换/回滚方法）都在各分支的 README。
 

@@ -1,0 +1,169 @@
+name: Sync aria2 compose
+
+# 让 `aria2` orphan 分支与上游 P3TERX/Aria2-Pro-Docker 保持同步（分支 2026-10-24
+# 迁移入本仓库：域名/registry/宿主路径一律 env 模板化，仓库任何文件不得含真实域名）：
+#   1. docker-compose.upstream.yaml  <- 上游 docker-compose.yml 原样拷贝（bot 维护）
+#   2. docker-compose.yaml           <- 与 docker-compose.portainer.yaml 的预合并产物，
+#                                       aria2-pro / ariang 钉 digest（--no-interpolate 保留
+#                                       ${...} 模板，bot 生成，部署平台项目 env 注入：
+#                                       ARIA2_DOMAIN / JCR_REGISTRY / ARIA2_RPC_SECRET /
+#                                       ARIA2_CONFIG_DIR / ARIA2_DOWNLOADS_DIR）
+# 全部自定义只放 docker-compose.portainer.yaml——另两个文件永远不要手改。
+# 定时任务只跑默认分支，所以本文件放 main，checkout/推送的目标是 aria2 分支。
+
+on:
+  # ⚠️ 定时刻意未启用：启用方法——取消下面两行注释。
+  # schedule:
+  #   - cron: "42 4 5 * *" # 每月 5 日 04:42 UTC（北京 12:42）
+  workflow_dispatch:
+    inputs:
+      pin_mode:
+        description: 'digest 策略：latest=解析上游当前最新（升级通道）；keep=保留合并产物里既有 digest（只验证合并不升级）'
+        required: true
+        default: 'latest'
+        type: choice
+        options: ['latest', 'keep']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: aria2-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      PIN_MODE: ${{ inputs.pin_mode || 'latest' }}
+    steps:
+      - name: Check out aria2 branch
+        uses: actions/checkout@v4
+        with:
+          ref: aria2
+
+      - name: Fetch latest upstream compose
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/P3TERX/Aria2-Pro-Docker/master/docker-compose.yml \
+            -o docker-compose.upstream.yaml
+
+      - name: Merge, pin image digests and validate
+        run: |
+          set -euo pipefail
+          # --no-interpolate 保留 ${VAR} 模板，由部署平台的项目 env 注入
+          docker compose -f docker-compose.upstream.yaml -f docker-compose.portainer.yaml \
+            config --no-interpolate --quiet
+          docker compose -f docker-compose.upstream.yaml -f docker-compose.portainer.yaml \
+            config --no-interpolate > docker-compose.merged.tmp.yaml
+
+          # 钉两个主镜像（各 1 处）。pin_mode=latest 解析 docker hub 当前最新 digest；
+          # keep 保留旧生成品里既有 digest（不升级只验证）。
+          python3 - <<'PYEOF'
+          import re, subprocess, sys, os
+
+          pins = [
+              ('${JCR_REGISTRY}/docker/p3terx/aria2-pro', 1),
+              ('${JCR_REGISTRY}/docker/p3terx/ariang', 1),
+          ]
+          pin_mode = os.environ.get('PIN_MODE', 'latest')
+          assert pin_mode in ('latest', 'keep'), pin_mode
+
+          t = open('docker-compose.merged.tmp.yaml').read()
+          prev = open('docker-compose.yaml').read() if os.path.exists('docker-compose.yaml') else ''
+          for lit, expect in pins:
+              pat = re.compile(re.escape(lit) + r'(:[A-Za-z0-9_.-]+)?(@sha256:[0-9a-f]{64})?(?=\s*$)', re.M)
+              m = pat.search(t)
+              if not m:
+                  print(f'::error::image line not found for {lit} (override drift?)')
+                  sys.exit(1)
+              ref = 'p3terx/' + lit.rsplit('/', 1)[1] + (m.group(1) or ':latest')
+              if pin_mode == 'keep':
+                  prev_m = pat.search(prev)
+                  if not prev_m or '@sha256:' not in prev_m.group(0):
+                      print(f'::error::pin_mode=keep 但旧 docker-compose.yaml 里 {lit} 无 digest')
+                      sys.exit(1)
+                  digest = re.search(r'sha256:[0-9a-f]{64}', prev_m.group(0)).group(0)
+              else:
+                  r = subprocess.run(['docker', 'buildx', 'imagetools', 'inspect', ref,
+                                      '--format', '{{.Manifest.Digest}}'],
+                                     capture_output=True, text=True)
+                  digest = r.stdout.strip()
+                  if not digest.startswith('sha256:'):
+                      print(f'::error::empty digest for {ref}: {r.stdout!r} {r.stderr!r}')
+                      sys.exit(1)
+              t, n = pat.subn(f'{lit}{m.group(1) or ":latest"}@{digest}', t)
+              if n != expect:
+                  print(f'::error::pin failed for {lit}: matched {n} (expect {expect})')
+                  sys.exit(1)
+              print(f'pin_mode={pin_mode}: pinned {lit}@{digest} ({n} 处)')
+          open('docker-compose.merged.tmp.yaml', 'w').write(t)
+          n = t.count('@sha256:')
+          if n != 2:
+              print(f'::error::expected 2 pinned image refs in merged config, got {n}')
+              sys.exit(1)
+          PYEOF
+
+          # 结构闸：AriaNg 不得残留 network_mode（已清 host 改 bridge 双网络）
+          python3 - <<'PYEOF'
+          import yaml, sys
+          d = yaml.safe_load(open('docker-compose.merged.tmp.yaml'))
+          if d['services']['AriaNg'].get('network_mode'):
+              print('::error::AriaNg network_mode reset drift')
+              sys.exit(1)
+          print('AriaNg network_mode cleared OK')
+          PYEOF
+
+          # 哨兵检查：上游若改了我们 override 依赖的东西，大声失败而不是部署坏配置。
+          #（含 ${} 的 needle 必须单引号，否则 set -u 下被 shell 展开成 unbound variable）
+          for needle in \
+            "name: aria2" \
+            '${ARIA2_DOMAIN}' \
+            '${ARIA2_RPC_SECRET}' \
+            '${ARIA2_CONFIG_DIR}' \
+            '${ARIA2_DOWNLOADS_DIR}' \
+            '${JCR_REGISTRY}/docker/p3terx/aria2-pro' \
+            '${JCR_REGISTRY}/docker/p3terx/ariang' \
+            "VIRTUAL_HOST" \
+            "reverse-proxy" \
+            "6880" ; do
+            grep -qF "$needle" docker-compose.merged.tmp.yaml || {
+              echo "::error::merged config missing '$needle' — upstream changed something our override relies on"
+              exit 1
+            }
+          done
+          mv docker-compose.merged.tmp.yaml docker-compose.yaml
+
+          # 结构 smoke test：YAML 可解析 + 2 服务 + 2 钉版引用 + env 模板保留。
+          python3 - <<'PYEOF'
+          import yaml, sys
+          d = yaml.safe_load(open('docker-compose.yaml'))
+          assert set(d.get('services', {})) == {'Aria2-Pro', 'AriaNg'}, \
+              f"services mismatch: {list(d.get('services', {}))}"
+          t = open('docker-compose.yaml').read()
+          missing = [v for v in ('${JCR_REGISTRY}', '${ARIA2_DOMAIN}',
+                                 '${ARIA2_RPC_SECRET}') if v not in t]
+          assert not missing, f"missing env templates: {missing}"
+          assert t.count('@sha256:') == 2, f"expected 2 pinned image refs, got {t.count('@sha256:')}"
+          print('merged structure OK: yaml parses, 2 services, env templates intact, 2 pinned refs')
+          PYEOF
+
+      - name: Secret/sensitive leakage gate
+        run: |
+          set -euo pipefail
+          # 总闸：任何真实域名/标识串都不应出现在仓库任何文件里
+          #（占位域名 aria.example.com / *.example.com 是允许的；
+          #  pattern 隔位通配混淆——不含可直读串、不自匹配，各分支同款）
+          ! git grep -niE 's[a-z]v[a-z]rc[a-z]re|h[a-z]nh[a-z]o[a-z]i' || {
+            echo "::error::仓库文件残留真实域名——清洗机制被破坏"; exit 1; }
+          echo "leakage gate OK"
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docker-compose.upstream.yaml docker-compose.yaml
+          if git diff --cached --quiet; then
+            echo "Upstream unchanged, nothing to do."
+          else
+            git commit -m "sync: upstream compose + image digests ($(date -u +%F), pin_mode=${PIN_MODE:-latest})"
+            git push origin aria2
+          fi
