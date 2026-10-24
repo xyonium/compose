@@ -61,8 +61,8 @@ jobs:
           import re, subprocess, sys, os
 
           pins = [
-              ('${JCR_REGISTRY}/docker/p3terx/aria2-pro', 1),
-              ('${JCR_REGISTRY}/docker/p3terx/ariang', 1),
+              ('${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/p3terx/aria2-pro', 1),
+              ('${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/p3terx/ariang', 1),
           ]
           pin_mode = os.environ.get('PIN_MODE', 'latest')
           assert pin_mode in ('latest', 'keep'), pin_mode
@@ -120,8 +120,8 @@ jobs:
             '${ARIA2_RPC_SECRET}' \
             '${ARIA2_CONFIG_DIR}' \
             '${ARIA2_DOWNLOADS_DIR}' \
-            '${JCR_REGISTRY}/docker/p3terx/aria2-pro' \
-            '${JCR_REGISTRY}/docker/p3terx/ariang' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/p3terx/aria2-pro' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/p3terx/ariang' \
             "VIRTUAL_HOST" \
             "reverse-proxy" \
             "6880" ; do
@@ -139,7 +139,7 @@ jobs:
           assert set(d.get('services', {})) == {'Aria2-Pro', 'AriaNg'}, \
               f"services mismatch: {list(d.get('services', {}))}"
           t = open('docker-compose.yaml').read()
-          missing = [v for v in ('${JCR_REGISTRY}', '${ARIA2_DOMAIN}',
+          missing = [v for v in ('${JCR_REGISTRY', '${ARIA2_DOMAIN}',
                                  '${ARIA2_RPC_SECRET}') if v not in t]
           assert not missing, f"missing env templates: {missing}"
           assert t.count('@sha256:') == 2, f"expected 2 pinned image refs, got {t.count('@sha256:')}"
