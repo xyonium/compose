@@ -55,7 +55,7 @@ jobs:
           python3 - <<'PYEOF'
           import re, subprocess, sys
           t = open('docker-compose.merged.tmp.yaml').read()
-          lit = '${JCR_REGISTRY}/ghcr/goauthentik/server'
+          lit = '${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/goauthentik/server'
 
           m = re.search(re.escape(lit) + r':([A-Za-z0-9_.-]+)', t)
           if not m:
@@ -91,8 +91,8 @@ jobs:
           for needle in \
             "name: authentik" \
             'Host(`${AUTHENTIK_DOMAIN}`)' \
-            '${JCR_REGISTRY}/ghcr/goauthentik/server' \
-            '${JCR_REGISTRY}/docker/library/postgres' \
+            '${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/goauthentik/server' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/library/postgres' \
             '${PG_PASS:?' \
             "AUTHENTIK_SECRET_KEY" \
             "AUTHENTIK_EMAIL__HOST" \
@@ -128,7 +128,7 @@ jobs:
           assert set(d.get('services', {})) == {'postgresql', 'server', 'worker'}, \
               f"services mismatch: {list(d.get('services', {}))}"
           t = open('docker-compose.yaml').read()
-          missing = [v for v in ('${JCR_REGISTRY}', '${AUTHENTIK_DOMAIN}',
+          missing = [v for v in ('${JCR_REGISTRY', '${AUTHENTIK_DOMAIN}',
                                  '${PG_PASS', '${AUTHENTIK_SECRET_KEY') if v not in t]
           assert not missing, f"missing env templates: {missing}"
           assert t.count('@sha256:') == 2, "expected 2 pinned images"
