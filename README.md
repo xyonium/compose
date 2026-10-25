@@ -176,6 +176,48 @@ draw.io 可编辑源文件（脱敏版）：[docs/final-architecture.drawio](doc
   被阻塞，日志时间戳整体后移）。升级 dashboard/server 后要同步抬这个版本号；若 RDP 页面
   出现 JS 桥与 wasm 不匹配的异常，删掉该行即回落到镜像默认版本。
 
+## 功能清单与实现要点
+
+只写「原理 → 落地」，踩过的坑收成一句结论。
+
+| 能力 | 状态 | 实现要点 |
+|---|---|---|
+| 管理面/信令/relay/STUN 自建 | ✅ | 单容器 `netbird-server`（management+signal）+ 独立 `relay`（TLS 9443）+ STUN（3479）；traefik 把 `/ws-proxy/`、`/relay`、`/api`、`/oauth2` 转给 server |
+| 内嵌 IdP | ✅ | 单容器自带 Dex，`/oauth2` 由 traefik 反代，`/setup` 建首个管理员 |
+| Setup Key | ✅ | 3 个 key；批量入网交给 MDM/脚本，不要在面板手点 |
+| Networks + routing peer | ✅ | OPNsense 做 routing peer 发布内网资源；ACL 按组放行，DNS 至少放 UDP 53 |
+| 访问控制 | ✅ | 组→组 + 端口；浏览器会话的临时策略由服务端自动建删，不用手工维护 |
+| 分离 DNS | ✅ | nameserver 组 + match domain 下发内网解析器；**基础设施域名（netbird/relay）不要被内网匹配域劫持**，否则远端 peer 会绕进隧道 |
+| 反向代理 / Agent Network | ✅ | `netbird-proxy` 私有模式 + `admin token create`；endpoint 证书走泛域名目录，热加载 |
+| 浏览器 RDP | ✅ | 见下方「三条硬约束」 |
+| 浏览器 SSH | ⬜ 未验证 | 目标机需启用 NetBird SSH server（44338），与 RDP 共用同一套 relay/CSP |
+| Clientless RDP（反向代理 TCP） | ⬜ 未用 | 建 TCP 服务 + IP 白名单，给装不了客户端的第三方 |
+| Exit Node | ⬜ 未用 | 当前 routes=0；需要时给 peer 开 exit node 并加策略 |
+| Site-to-Site | ⬜ 未用 | 两端 routing peer + 网络互指，替代逐台客户端 |
+| Posture Checks | ⬜ 未用 | 版本/EDR 条件接进策略（社区版可用） |
+| 外置 IdP（Authentik） | ✅ | 作为**额外**认证源接入，内嵌 Dex 保留未禁用；两种登录方式并存 |
+| HA / 外部 signal、relay | ⬜ 未做 | 单实例；扩展时 management 多实例 + 外部 signal/relay |
+| 观测 | ⬜ 未做 | `metricsPort: 9090` 已开，未接 Prometheus |
+
+### 浏览器 RDP 的三条硬约束
+
+1. **CSP**：dashboard 只自动把 auth/management 主机写进 `connect-src`（且削端口），
+   relay 在独立子域 + 9443，必须用 `NETBIRD_CSP` 显式放行，否则浏览器静默拒绝拨号。
+2. **wasm 版本**：默认版本由 dashboard 镜像决定，落后 server 会导致 CredSSP 阶段卡死；
+   用 `NETBIRD_WASM_PATH` 钉到与 server 同代。
+3. **凭据格式**：用户名**不要带 `@`**——弹窗会把 `user@domain` 拆成 NTLM 的 user/domain，
+   微软账户因此认证失败；而 `MicrosoftAccount\upn` 又被 IronRDP 判为 mixed format。
+   **微软账户登录的机器，用本地短名 `.\<SAM名>` + 微软账户密码即可**（短名是 Windows
+   按邮箱前 5 个字符自动派生的，可能和你现在的邮箱对不上，用 `whoami` 查实际值），
+   短名不含 `@`，不触发拆分。NLA 保持开启，不要为排障关掉。
+
+### relay 可达性（跨 VLAN 的关键）
+
+relay 必须有一个**所有 peer 都能到达的地址**。VLAN 隔离时唯一全局可达的是 WAN IP：
+公网/内网两份解析给同一个 `relay.<域>` 答案，内网 peer 走 hairpin。OPNsense 侧需要
+**Reflection for destination NAT** + **Automatic source NAT for Reflection** 同时开启——
+只开前者时回包源地址是内网 IP，客户端会丢弃（表现为 TCP 超时、UDP"漏"一个源地址不对的包）。
+
 ## 公网访客入口的回退方案（当前不启用）
 
 若 VPS 上的公网 proxy 入口要退役、改由部署主机本机对外暴露访客面：
