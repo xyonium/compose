@@ -42,8 +42,11 @@ NetBird 全功能自建（VPN 管理 + **Agent Network** Beta）。管理面与 
 1. **DNS**（split-horizon，公网/内网各一条，同一域名不同指向）：
    - `netbird.your-domain.example`：公网解析指向你的公网入口（见「公网接入架构」），
      内网权威 DNS 指到部署主机的 traefik（断外网时管理面仍可用）；
-   - `relay.netbird.your-domain.example`：公网指向出口静态 IP（边界映射回部署主机的
-     relay 容器）；内网同样指部署主机即可。
+   - `relay.netbird.your-domain.example`：**内外两份解析给同一个公网 IP**（边界映射回
+     relay 容器）。VLAN 隔离时只有 WAN IP 是全局可达的，内网 peer 走 hairpin；因此
+     OPNsense 侧必须同时开 destination NAT 反射与 Automatic source NAT（见「relay 可达性」）。
+     不要让内网视图返回部署主机的私网地址——远端 peer 拿到它就只能绕隧道，形成
+     「要 relay 才能建隧道、要隧道才能到 relay」的死锁。
    - `*.netbird.your-domain.example` 公网泛解析仅在启用「公网访客入口」时才需要
      （agent network endpoint 只在 WG overlay 内解析，默认不需要）。
 2. **证书**：泛域名证书须包含 `netbird.your-domain.example` 与 `*.netbird.your-domain.example`
@@ -140,7 +143,7 @@ _图例：`-.` 虚线 = control/DNS；`-->` 实线带文字 = data path；VPS L4
 | 管理面（内网 peer） | 公司内网设备 | 内网 DNS 直连部署主机 traefik | 同上 |
 | 访客面（browser） | 任意 internet 浏览器 | `<服务>.nb-pub.example.com` → VPS 反代 → VPS netbird-public-proxy → WG → routing peer → 内网资源 | VPS 反代自己的泛通配证书 |
 | Agent Network endpoint | agent 机上 NetBird client（overlay only） | 本机 WG peer → proxy :8443 | `NETBIRD_CERT_DIR` 泛域名证书（热加载） |
-| relay + STUN | 任何 peer | `relay.netbird.your-domain.example:9443` + `3479/udp` → 边界映射 → relay 容器 | 同目录证书（**启动读一次，续期后要重启**） |
+| relay + STUN | 任何 peer | `relay.netbird.your-domain.example:9443` + `3479/udp` → 边界映射 → relay 容器（内网 peer 走 hairpin，需反射 + 源 NAT） | 同目录证书（**启动读一次，续期后要重启**） |
 
 **routing peer（必要依赖）**：边界防火墙上的 NetBird client 配成 Networks 的
 routing peer——发布内网目标资源（建议按域名资源 + 内网权威 DNS 两条 host 资源配），
@@ -217,6 +220,23 @@ relay 必须有一个**所有 peer 都能到达的地址**。VLAN 隔离时唯�
 公网/内网两份解析给同一个 `relay.<域>` 答案，内网 peer 走 hairpin。OPNsense 侧需要
 **Reflection for destination NAT** + **Automatic source NAT for Reflection** 同时开启——
 只开前者时回包源地址是内网 IP，客户端会丢弃（表现为 TCP 超时、UDP"漏"一个源地址不对的包）。
+
+```mermaid
+flowchart LR
+    ext["外部 peer<br/>家里 / 出差"] -- "9443 tcp/udp" --> wan
+    lan["内网 peer<br/>任意 VLAN"] -- "同一地址 9443" --> wan
+    wan["边界 WAN IP<br/>:9443 → relay"] -- "DNAT + SNAT<br/>（反射）" --> relay["relay 容器<br/>.51:9443 / 3479"]
+    relay -- "WireGuard 帧" --> tgt["目标 peer"]
+```
+
+> 不要改成「内网解析到 .51、公网解析到 WAN IP」：远端 peer 一旦拿到私网地址，就必须先有到
+> routing peer 的隧道才能连 relay，而隧道的建立又可能依赖 relay —— 死锁。
+
+### 运维备注
+
+- **临时 peer**：浏览器 RDP 会话会建临时 peer + 临时策略，断开后 **10 分钟**自动删；
+  从未连上过的临时 peer 不会进清理链表，只有**重启 `netbird-server`** 才会被
+  `LoadInitialPeers` 收进去（启动后约 10 分钟批量删）。排查时先重启再观察，别手工删库。
 
 ## 公网访客入口的回退方案（当前不启用）
 
