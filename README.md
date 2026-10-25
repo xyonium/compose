@@ -120,7 +120,7 @@ flowchart TB
     d1["部署主机（内网控制面）<br/>——————————————————————<br/>traefik :443<br/>management+signal+dashboard :443<br/>relay+STUN :9443 (tcp/udp) + :3479 (udp)<br/>agent proxy :51821 (udp，WG 内）"]
     dns1["内网权威 DNS（双机冗余）<br/>对内所有内网域名解析"]
     lanres["内网资源<br/>——————————————————————<br/>AI 网关 / 内部服务<br/>（访客 NB-pub 子域 → 指到具体服务）"]
-    unbound["边界 DNS<br/>*.<br/>netbird.your-domain.example<br/>→ 部署主机<br/>（内网直连；断外网仍可管理）"]
+    unbound["边界 DNS（split-horizon）<br/>netbird.your-domain.example → 部署主机 :443<br/>（内网直连；断外网仍可管理）<br/>relay.netbird.your-domain.example → WAN IP<br/>（内网同样走 hairpin）"]
 
     pub -- "TLS: <服务>.nb-pub.example.com<br/>（公网 DNS）" --> vps
     vps -- "SNI :443 分流 + 终结" --> pubproxy
@@ -129,8 +129,10 @@ flowchart TB
     bfw -- "LAN SNI 透传 → traefik" --> d1
     bfw --> lanres
     peer <-. "P2P WireGuard（打洞后）" .-> bfw
+    peer -. "relay 兜底：relay 域名解析到 WAN IP" .-> bfw
+    bfw -- "9443 tcp/udp → relay<br/>（反射：DNAT + 源 NAT）" --> d1
     dns1 <-. "split-horizon DNS：<br/>netbird.your-domain.example → 部署主机:443 直连" .-> unbound
-    d1 <-. "LAN 管理面 + relay 回源" .-> bfw
+    d1 <-. "LAN 管理面回源（443）" .-> bfw
 ```
 _图例：`-.` 虚线 = control/DNS；`-->` 实线带文字 = data path；VPS L4 SNI 用纯 TCP 透传给
 部署主机 traefik（TLS 不终结）。_
