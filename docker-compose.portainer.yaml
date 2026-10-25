@@ -43,6 +43,12 @@ services:
       # 独立子域 + 9443，不在策略里 → 浏览器静默拒绝拨号，表现就是“一直连不上”，
       # 服务端一条连接日志都没有。此处按 relay 实际地址放行（relay 地址变了要同步改）。
       NETBIRD_CSP: wss://relay.${NETBIRD_DOMAIN}:9443
+      # 浏览器客户端 wasm 版本：dashboard v2.95.0 默认拉 v0.76.3，与 server 0.81.3 /
+      # peer 0.81.4 差 5 个小版本。症状：RDP 在 CredSSP(NLA) 阶段客户端冻住 90 秒
+      # （wg 握手日志的时间戳被整体推迟 90 秒 = Go/WASM 事件循环被阻塞），随后被服务端
+      # RST，且 Windows 侧完全没有 4625 记录。对齐到与 server 同代的 v0.81.4。
+      # ⚠️ 若出现 dashboard 的 RDP 页面异常（JS 桥与 wasm 不匹配），删掉本行即回落 0.76.3。
+      NETBIRD_WASM_PATH: https://pkgs.netbird.io/wasm/client/v0.81.4
     labels:
       # 上游渲染的 router label 含真实域名——按同 key 全覆盖为 ${NETBIRD_DOMAIN}
       # 模板（compose label 合并按 key 后者胜），同时补 web 入口跳转

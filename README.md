@@ -170,6 +170,11 @@ draw.io 可编辑源文件（脱敏版）：[docs/final-architecture.drawio](doc
   而 dashboard 自动生成的 CSP 只会写入 auth 与 management 主机（且把 management 的端口削掉），
   独立子域 + 9443 的 relay 不在策略里就被浏览器静默拒绝拨号——现象是"一直连不上"、
   服务端无连接日志、临时 peer 残留（`DeletePeers: context canceled`）。relay 地址变更需同步改此行。
+- dashboard 的 `NETBIRD_WASM_PATH` 钉到 `v0.81.4`：浏览器客户端 wasm 的默认版本由 dashboard
+  镜像决定（v2.95.0 → v0.76.3），比 server 0.81.3 / peer 0.81.4 落后 5 个小版本。症状是 RDP
+  走到 NLA(CredSSP) 就冻住 90 秒后被 RST，Windows 侧一条 4625 都没有（wasm 里 Go 事件循环
+  被阻塞，日志时间戳整体后移）。升级 dashboard/server 后要同步抬这个版本号；若 RDP 页面
+  出现 JS 桥与 wasm 不匹配的异常，删掉该行即回落到镜像默认版本。
 
 ## 公网访客入口的回退方案（当前不启用）
 

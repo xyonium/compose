@@ -21,6 +21,7 @@ services:
       NETBIRD_CSP: wss://relay.${NETBIRD_DOMAIN}:9443
       NETBIRD_MGMT_API_ENDPOINT: https://${NETBIRD_DOMAIN}
       NETBIRD_MGMT_GRPC_API_ENDPOINT: https://${NETBIRD_DOMAIN}
+      NETBIRD_WASM_PATH: https://pkgs.netbird.io/wasm/client/v0.81.4
       NGINX_SSL_PORT: "443"
       USE_AUTH0: "false"
     image: ${JCR_REGISTRY}/docker/netbirdio/dashboard@sha256:3d6adfee19dd8d34d795af51daee69d27d2081d2076a5a304cfdd14acc67d6f4
