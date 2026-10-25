@@ -28,8 +28,8 @@
         <mxCell id="zone-fw" value="公司边界防火墙（静态公网 IP；NetBird client 兼 routing peer）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#b85450;dashed=1;verticalAlign=top;fontSize=12;fontColor=#b85450" vertex="1" parent="1">
           <mxGeometry x="760" y="40" width="300" height="220" as="geometry" />
         </mxCell>
-        <mxCell id="nat" value="&lt;b&gt;WAN 端口映射&lt;/b&gt;：TCP 10443→内网 443（管理面）｜TCP+UDP 9443（relay）｜UDP 3479（STUN）｜UDP 51821（agent proxy，可选）&lt;br/&gt;WAN 放行：UDP 51820（routing peer 自身 P2P）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=6;verticalAlign=middle" vertex="1" parent="1">
-          <mxGeometry x="775" y="70" width="270" height="100" as="geometry" />
+        <mxCell id="nat" value="&lt;b&gt;WAN 端口映射&lt;/b&gt;：TCP 10443→内网 443（管理面）｜TCP+UDP 9443（relay；内网访问走 hairpin）｜UDP 3479（STUN）｜UDP 51821（agent proxy，可选）&lt;br/&gt;WAN 放行：UDP 51820（routing peer 自身 P2P）&lt;br/&gt;hairpin 需 NAT 反射 + 自动源 NAT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=6;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="775" y="70" width="270" height="112" as="geometry" />
         </mxCell>
         <mxCell id="routing-peer" value="&lt;b&gt;routing peer&lt;/b&gt;（WG 51820）&lt;br/&gt;Networks 发布内网网段 + 资源域名；&lt;br/&gt;ACL 管控内网 DNS / 服务授权" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;align=left;spacingLeft=6;verticalAlign=middle" vertex="1" parent="1">
           <mxGeometry x="775" y="180" width="270" height="70" as="geometry" />
