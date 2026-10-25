@@ -165,6 +165,11 @@ draw.io 可编辑源文件（脱敏版）：[docs/final-architecture.drawio](doc
   ACME 关闭、PROXY protocol 关闭——agent 流量走 WG 隧道直连 proxy。
 - server 的 gRPC 路由在同一覆盖里补上了 `/management.ProxyService/` 前缀
   （上游 option-1 渲染漏了它；仅将来跨主机注册远程 proxy 时需要，先补齐防忘）。
+- dashboard 的 `NETBIRD_CSP` 放行 `wss://relay.${NETBIRD_DOMAIN}:9443`：Dashboard 上的
+  RDP/SSH 按钮走 **Browser Client**（浏览器里跑 WASM peer），数据面只走 relay 的 WebSocket，
+  而 dashboard 自动生成的 CSP 只会写入 auth 与 management 主机（且把 management 的端口削掉），
+  独立子域 + 9443 的 relay 不在策略里就被浏览器静默拒绝拨号——现象是"一直连不上"、
+  服务端无连接日志、临时 peer 残留（`DeletePeers: context canceled`）。relay 地址变更需同步改此行。
 
 ## 公网访客入口的回退方案（当前不启用）
 

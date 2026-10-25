@@ -18,6 +18,7 @@ services:
       AUTH_SUPPORTED_SCOPES: openid profile email groups
       LETSENCRYPT_DOMAIN: none
       NETBIRD_AGENT_NETWORK_ENABLED: "true"
+      NETBIRD_CSP: wss://relay.${NETBIRD_DOMAIN}:9443
       NETBIRD_MGMT_API_ENDPOINT: https://${NETBIRD_DOMAIN}
       NETBIRD_MGMT_GRPC_API_ENDPOINT: https://${NETBIRD_DOMAIN}
       NGINX_SSL_PORT: "443"

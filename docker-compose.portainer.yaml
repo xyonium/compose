@@ -37,6 +37,12 @@ services:
       NGINX_SSL_PORT: "443"
       LETSENCRYPT_DOMAIN: none
       NETBIRD_AGENT_NETWORK_ENABLED: "true"
+      # 浏览器 RDP/SSH（Dashboard 上的 RDP 按钮）走 Browser Client：浏览器里跑一个
+      # WASM peer，数据面只走 relay 的 WebSocket（无 P2P）。dashboard 的 CSP 只会自动
+      # 把 auth 与 management 主机加进 connect-src，且 MGMT 那条会削掉端口；relay 在
+      # 独立子域 + 9443，不在策略里 → 浏览器静默拒绝拨号，表现就是“一直连不上”，
+      # 服务端一条连接日志都没有。此处按 relay 实际地址放行（relay 地址变了要同步改）。
+      NETBIRD_CSP: wss://relay.${NETBIRD_DOMAIN}:9443
     labels:
       # 上游渲染的 router label 含真实域名——按同 key 全覆盖为 ${NETBIRD_DOMAIN}
       # 模板（compose label 合并按 key 后者胜），同时补 web 入口跳转
