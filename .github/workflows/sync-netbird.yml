@@ -134,7 +134,16 @@ jobs:
                   fails.append(f'dashboard: rendered key {k} missing in override inline env')
               elif inline[k] != exp:
                   fails.append(f'dashboard: {k} drift: expected {exp!r} inline={inline[k]!r}')
-          for k in set(inline) - set(rendered) - {'NETBIRD_AGENT_NETWORK_ENABLED'}:
+          # 刻意新增的 override 专属键（上游 render_dashboard_env 不生成，由本部署架构需要）：
+          #   NETBIRD_AGENT_NETWORK_ENABLED —— 开启 Agent Network 面板（非 ONLY 模式）
+          #   NETBIRD_CSP                   —— 放行 relay 独立子域:9443 的 WebSocket（浏览器 RDP/SSH）
+          #   NETBIRD_WASM_PATH             —— 钉浏览器客户端 wasm 版本，对齐 server（修 CredSSP 卡死）
+          EXTRA_ALLOWED_DASHBOARD = {
+              'NETBIRD_AGENT_NETWORK_ENABLED',
+              'NETBIRD_CSP',
+              'NETBIRD_WASM_PATH',
+          }
+          for k in set(inline) - set(rendered) - EXTRA_ALLOWED_DASHBOARD:
               fails.append(f'dashboard: unexpected extra inline key {k}')
 
           # proxy：刻意差异白名单（值覆盖 / 刻意缺席 / 刻意新增 / 域名模板化）
