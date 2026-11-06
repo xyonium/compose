@@ -14,7 +14,7 @@ name: sub2api
 
 services:
   sub2api:
-    image: ${JCR_REGISTRY}/docker/weishaw/sub2api:latest
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/weishaw/sub2api:latest
     # 不暴露宿主端口（清掉上游的 ${BIND_HOST}:${SERVER_PORT}:8080 映射），
     # 外部访问走 traefik；容器 8080 经 reverse-proxy 网络可达
     ports: !reset null
@@ -37,10 +37,10 @@ services:
       - "traefik.http.routers.sub2apihttp.middlewares=http2https"
 
   postgres:
-    image: ${JCR_REGISTRY}/docker/postgres:18-alpine
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/postgres:18-alpine
 
   redis:
-    image: ${JCR_REGISTRY}/docker/redis:8-alpine
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/redis:8-alpine
 
 networks:
   reverse-proxy:

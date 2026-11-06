@@ -22,7 +22,7 @@ env 注入。
 
 ## 自定义内容（相对上游）
 
-- 三个镜像全部走私服 mirror：`${JCR_REGISTRY}/docker/{weishaw/sub2api,postgres:18-alpine,redis:8-alpine}`（registry 主机名走项目 env）
+- 三个镜像全部走私服 mirror：`${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/{weishaw/sub2api,postgres:18-alpine,redis:8-alpine}`（registry 主机名走项目 env）
 - sub2api 摘掉宿主端口映射（上游默认 `0.0.0.0:8080`），改走 traefik：
   `https://${SUB2API_DOMAIN}`，**部署主机风格**——websecure 入口已配泛域名证书文件，
   路由只写 `tls=true`，不写 certresolver；web 入口挂 `http2https` 跳转中间件
@@ -40,7 +40,7 @@ env 注入。
 | 变量 | 说明 |
 |---|---|
 | `SUB2API_DOMAIN` | **必填**，对外访问域名。compose 内 2 条 traefik Host 路由（websecure 主路由 + web 跳转路由）由它派生 |
-| `JCR_REGISTRY` | **必填**，私服镜像 mirror 主机名。**只写主机名**（不带协议不带路径）；3 个镜像 ref 为 `${JCR_REGISTRY}/docker/…` |
+| `JCR_REGISTRY` | 私服镜像 mirror 主机名。**只写主机名**（不带协议不带路径）。**可不设**：不设/空串时镜像回落 docker.io 官方源 |
 | `POSTGRES_PASSWORD` | **必填**（上游 `:?` 断言，不设拒绝启动）；`openssl rand -hex 32` 生成 |
 | `JWT_SECRET` | 强烈建议固定，否则重启后登录态全失效；`openssl rand -hex 32` 生成 |
 | `TOTP_ENCRYPTION_KEY` | 用了 2FA 就**必须**固定，否则重启后所有 TOTP 失效；`openssl rand -hex 32` 生成 |
