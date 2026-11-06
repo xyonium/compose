@@ -21,7 +21,7 @@ name: netbird
 
 services:
   dashboard:
-    image: ${JCR_REGISTRY}/docker/netbirdio/dashboard:latest
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/netbirdio/dashboard:latest
     env_file: !reset null
     environment:
       NETBIRD_MGMT_API_ENDPOINT: https://${NETBIRD_DOMAIN}
@@ -60,7 +60,7 @@ services:
       - "traefik.http.routers.netbird-http.middlewares=http2https"
 
   netbird-server:
-    image: ${JCR_REGISTRY}/docker/netbirdio/netbird-server:latest
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/netbirdio/netbird-server:latest
     # STUN 移到 relay 容器（config.yaml 里配了外部 stuns/relays 后内嵌 STUN/relay 自动关闭）
     ports: !reset null
     # !override 整体替换上游 volumes：./config.yaml bind → netbird_config 命名卷
@@ -78,7 +78,7 @@ services:
   # 不占 443/80；TLS 用宿主同步的泛域名证书（${NETBIRD_CERT_DIR}：
   # 证书只在启动时读一次，每次续期后要 docker restart 该容器）
   relay:
-    image: ${JCR_REGISTRY}/docker/netbirdio/relay:latest
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/netbirdio/relay:latest
     container_name: netbird-relay
     restart: unless-stopped
     ports:
@@ -105,7 +105,7 @@ services:
       - relay_data:/data
 
   proxy:
-    image: ${JCR_REGISTRY}/docker/netbirdio/reverse-proxy:latest
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/netbirdio/reverse-proxy:latest
     env_file: !reset null
     environment:
       NB_PROXY_DEBUG_LOGS: "false"

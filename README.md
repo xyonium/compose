@@ -30,7 +30,7 @@ NetBird 全功能自建（VPN 管理 + **Agent Network** Beta）。管理面与 
 | 变量 | 说明 | 形态示例 |
 |---|---|---|
 | `NETBIRD_DOMAIN` 🆕 | 管理面/endpoint 域名。compose 内 4 条 traefik 路由、dashboard 的 4 个 URL、proxy `NB_PROXY_DOMAIN`、relay `rels://relay.${NETBIRD_DOMAIN}:9443` 全部由它派生 | `vpn.company.example` |
-| `JCR_REGISTRY` 🆕 | 私服镜像 mirror 主机名。**只写主机名**（不带协议不带路径）；4 个镜像 ref 为 `${JCR_REGISTRY}/docker/netbirdio/…` | `registry.company.example` |
+| `JCR_REGISTRY` 🆕 | 私服镜像 mirror 主机名。**只写主机名**（不带协议不带路径）。**可不设**：不设/空串时 4 个镜像回落 docker.io 官方源 | `registry.company.example` |
 | `NETBIRD_CERT_DIR` 🆕 | 宿主机上泛域名证书同步落盘目录（含 `fullchain.pem` + `key.pem`），bind 进 proxy（`/wildcard-certs`）与 relay（`/certs`）。**必须不带前导 `/`**（填 `etc/edge-certs`，不填 `/etc/edge-certs`）——compose 归一化 bind source 时按首字符判断是否绝对路径，写 `/${VAR}` 才能避开拼 cwd 的 bug（compose-go/paths/resolve.go:113） | `opt/traefik-certs/company.example` |
 | `NB_PROXY_TOKEN` | proxy 注册到管理面的 token。首次部署先填占位值（proxy 起不来属预期），拿到真 token 后替换重建（见 bootstrap 第 5 步） | `nbx_…` |
 | `NB_RELAY_AUTH_SECRET` | relay 与 management 的共享密钥。**必须与 config.yaml 里 `relays.secret`（= `server.authSecret`）同值**，错一个字符表现为 relay 健康但拒绝所有 peer | `openssl rand -base64 32 \| tr -d '='` |
@@ -157,7 +157,7 @@ draw.io 可编辑源文件（脱敏版）：[docs/final-architecture.drawio](doc
 
 ## 自定义摘要（docker-compose.portainer.yaml）
 
-- 镜像全部走 `${JCR_REGISTRY}/docker/netbirdio/*` mirror（registry 走项目 env），
+- 镜像全部走 `${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/netbirdio/*` mirror（registry 走项目 env），
   4 个主镜像钉 digest（bot 每次 sync 重钉 latest）。
 - 域名全 env 化：上游 4 组 traefik router label 在 override 按同 key 全覆盖为
   `Host(\`${NETBIRD_DOMAIN}\`)` 模板（compose label 合并按 key、后者胜），
@@ -291,7 +291,7 @@ draw.io 可编辑源文件（脱敏版）：[docs/proxy-architecture.drawio](doc
 - 分支历史经安全清洗重建（单 commit）：**digest 回滚链不再存在**。需要回退
   上游版本时，在部署平台把项目切回旧版 `docker-compose.yaml`（平台侧有部署历史），
   或临时手改 `docker-compose.yaml` 里的镜像 digest（上游 Docker Hub 查历史 digest
-  并改回 `${JCR_REGISTRY}/docker/netbirdio/<repo>@sha256:…`）后重建项目。
+  并改回 `${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/netbirdio/<repo>@sha256:…`）后重建项目。
 - 关闭 Agent Network：`docker-compose.portainer.yaml` 删掉
   `NETBIRD_AGENT_NETWORK_ENABLED` 与 proxy 定制，等下次 sync 或直接手改
   `docker-compose.yaml` 重建（数据在 `netbird_*` 卷里，随时可加回）。
