@@ -62,7 +62,7 @@ jobs:
           import re, subprocess, sys
           # 纯字面模板串——单引号 heredoc 下无 shell 展开；re.escape 后做 EOL 锚定
           #（镜像名互为前缀，不锚定行尾会误伤长名字的镜像行）
-          lit = '${JCR_REGISTRY}/ghcr/xyonium/firecrawl-research-proxy'
+          lit = '${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/xyonium/firecrawl-research-proxy'
           r = subprocess.run(
               ['docker', 'buildx', 'imagetools', 'inspect',
                'ghcr.io/xyonium/firecrawl-research-proxy:latest', '--format', '{{.Manifest.Digest}}'],
