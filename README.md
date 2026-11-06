@@ -25,17 +25,43 @@ NetBird 全功能自建（VPN 管理 + **Agent Network** Beta）。管理面与 
 | `config.yaml` | 渲染参考模板（占位域名 + 3 个密钥洗成 `__GENERATE_AT_DEPLOY__`） | 只由机器人改 |
 | `dashboard.env` / `proxy.env` | 渲染参考件（占位域名；token 为 `__SET_ME__`） | 只由机器人改 |
 
-## 平台项目 env（**5 个全部必填**，缺一部署即失败）
+## 平台项目 env（**6 个全部必填**，缺一部署即失败）
 
 | 变量 | 说明 | 形态示例 |
 |---|---|---|
 | `NETBIRD_DOMAIN` 🆕 | 管理面/endpoint 域名。compose 内 4 条 traefik 路由、dashboard 的 4 个 URL、proxy `NB_PROXY_DOMAIN`、relay `rels://relay.${NETBIRD_DOMAIN}:9443` 全部由它派生 | `vpn.company.example` |
-| `JCR_REGISTRY` 🆕 | 私服镜像 mirror 主机名。**只写主机名**（不带协议不带路径）。**可不设**：不设/空串时 4 个镜像回落 docker.io 官方源 | `registry.company.example` |
+| `JCR_REGISTRY` 🆕 | 私服镜像 mirror 主机名。**只写主机名**（不带协议不带路径）。**可不设**：不设/空串时镜像回落 docker.io 官方源 | `registry.company.example` |
 | `NETBIRD_CERT_DIR` 🆕 | 宿主机上泛域名证书同步落盘目录（含 `fullchain.pem` + `key.pem`），bind 进 proxy（`/wildcard-certs`）与 relay（`/certs`）。**必须不带前导 `/`**（填 `etc/edge-certs`，不填 `/etc/edge-certs`）——compose 归一化 bind source 时按首字符判断是否绝对路径，写 `/${VAR}` 才能避开拼 cwd 的 bug（compose-go/paths/resolve.go:113） | `opt/traefik-certs/company.example` |
 | `NB_PROXY_TOKEN` | proxy 注册到管理面的 token。首次部署先填占位值（proxy 起不来属预期），拿到真 token 后替换重建（见 bootstrap 第 5 步） | `nbx_…` |
 | `NB_RELAY_AUTH_SECRET` | relay 与 management 的共享密钥。**必须与 config.yaml 里 `relays.secret`（= `server.authSecret`）同值**，错一个字符表现为 relay 健康但拒绝所有 peer | `openssl rand -base64 32 \| tr -d '='` |
+| `NB_PG_PASSWORD` 🆕 | `netbird-pg` 的 `netbird` 用户密码。容器首次 initdb 时由 `POSTGRES_PASSWORD` 消费；**必须与 config.yaml 里四个 store 的 DSN 中 password 同值**。`openssl rand -base64 24 \| tr -d '/+=' \| head -c 32` | 32 位无特殊符号串 |
 
 其余配置全部内联在 compose 里（dashboard env 无密钥；config.yaml 走命名卷）。
+
+## 存储后端：PostgreSQL（2026-11 起）
+
+四个 store 全部走 `netbird-pg`（PostgreSQL 16，独立容器，不暴露宿主端口）：
+
+| store | 数据库 | 说明 |
+|---|---|---|
+| `server.store` | `netbird` | 主库：peers/groups/policies/networks/zones 等 |
+| `server.activityStore` | `netbird_events` | 活动事件（events.db 迁移而来） |
+| `server.authStore` | `netbird_auth` | 内嵌 Dex 的 OIDC 数据（idp.db 迁移而来） |
+| `server.accessLogStore` | `netbird` | reverse proxy 访问日志，表由服务端自动建 |
+
+**为什么换 PG**：SQLite 是嵌入式单连接（`NewConn` 对 sqlite 强制 `MaxOpenConns=1`，设
+`NB_SQL_MAX_OPEN_CONNS` 也会被忽略并告警），peer 规模上百后并发写入排队；PG 池化到
+30 连接，且是未来多 management 副本（HA）的硬前提。**代价**：多一个约 30-100 MiB
+的 PG 容器，换来并发能力。
+
+**配置位置**：`store` / `activityStore` / `authStore` / `accessLogStore` 四段在
+**命名卷内的 config.yaml** 里（不在 git 里），首次部署或迁移时手工写。三库需手工
+`CREATE DATABASE`（`netbird` 由 `POSTGRES_DB` 自动建）。
+
+> ⚠️ **`store.encryptionKey` 一旦有数据就永远不能轮换**——它加密库内敏感字段，
+> 改了所有已加密数据都读不出来（表现为 `cipher: message authentication failed`）。
+> 迁移/重建时必须从旧 config.yaml 原样复制，四个 store 副本间也要保持一致。
+
 
 ## 首次 bootstrap（按序执行）
 
