@@ -55,7 +55,7 @@ jobs:
           set -euo pipefail
           # dify 的 compose 结构与镜像版本耦合：上游升级 dify 版本时，
           # portainer 层里的 tag 必须手改跟进，否则合成「新结构 + 旧镜像」的坏配置。
-          for repo in dify-api dify-web dify-plugin-daemon; do
+          for repo in dify-api dify-web dify-plugin-daemon dify-agent-local-sandbox dify-agent-backend; do
             up=$(grep -oE "langgenius/${repo}:[A-Za-z0-9._-]+" docker-compose.upstream.yaml | head -1)
             ov=$(grep -oE "langgenius/${repo}:[A-Za-z0-9._-]+" docker-compose.portainer.yaml | head -1)
             up_tag=${up#*:}; ov_tag=${ov#*:}
