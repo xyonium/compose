@@ -4,14 +4,14 @@
 # 合并两文件部署——本文件里 api/mcp 等上游镜像不带 digest，会覆盖掉生成品里的钉版。
 services:
   playwright-service:
-    image: ${JCR_REGISTRY}/ghcr/firecrawl/playwright-service:latest
+    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/playwright-service:latest
     build: !reset null
     restart: unless-stopped
     ports:
       - "3031:3000"
 
   api:
-    image: ${JCR_REGISTRY}/ghcr/firecrawl/firecrawl
+    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/firecrawl
     build: !reset null
     restart: unless-stopped
     container_name: firecrawl
@@ -51,7 +51,7 @@ services:
       "
 
   redis:
-    image: ${JCR_REGISTRY}/docker/redis:alpine
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/redis:alpine
     restart: unless-stopped
     volumes:
       - redis:/data
@@ -62,7 +62,7 @@ services:
       retries: 10
 
   rabbitmq:
-    image: ${JCR_REGISTRY}/docker/rabbitmq:3-management
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/rabbitmq:3-management
     restart: unless-stopped
     # 放宽上游健康检查窗口：全栈同时重建时 RabbitMQ 冷启动实测 ~27s，而上游默认
     # start_period 5s + retries 3×5s ≈ 20s 就被判 unhealthy，compose 随即中止启动，
@@ -78,24 +78,24 @@ services:
       - /tmp/firecrawl/rabiitmq:/var/lib/rabbitmq
 
   nuq-postgres:
-    image: ${JCR_REGISTRY}/ghcr/firecrawl/nuq-postgres:latest
+    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/nuq-postgres:latest
     build: !reset null
     restart: unless-stopped
     volumes:
       - postgres:/var/lib/postgresql/data
 
   foundationdb:
-    image: ${JCR_REGISTRY}/docker/foundationdb/foundationdb:7.3.63
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/foundationdb/foundationdb:7.3.63
 
   foundationdb-init:
-    image: ${JCR_REGISTRY}/docker/foundationdb/foundationdb:7.3.63
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/foundationdb/foundationdb:7.3.63
 
   # PDF OCR 适配器（源码在本分支 pdf-ocr/，详见其 README）。实现 RunPod MU
   # serverless 契约并转发到自托管 MinerU，让扫描件/图片型 PDF 走自己的 GPU。
   # api 启动时 sed 把 dist 里硬编码的 api.runpod.ai 改指到本服务；失败一律
   # 502，api 会降级回容器内 pdf-parse。镜像由 pdf-ocr-image workflow 云端构建钉版。
   pdf-ocr:
-    image: ${JCR_REGISTRY}/ghcr/xyonium/firecrawl-pdf-ocr@sha256:f29ebd525ce65fe27427ab9e355609fe541985044f810a4df8908e5dd885f9c6
+    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/xyonium/firecrawl-pdf-ocr@sha256:f29ebd525ce65fe27427ab9e355609fe541985044f810a4df8908e5dd885f9c6
     container_name: firecrawl-pdf-ocr
     restart: unless-stopped
     environment:
@@ -113,7 +113,7 @@ services:
   # 改代码推本分支即自动出图更新（CE 靠 compose diff 拉新镜像，无需本地 build）。
   # mcpo 容器（reach-mcp 网关）经 reverse-proxy 网络以名字 mcpo 访问。
   research-proxy:
-    image: ${JCR_REGISTRY}/ghcr/xyonium/firecrawl-research-proxy@sha256:9d79159b1e5dc94b4213ea4cf5d4c00626d20284dcd15baaf90a9a46b11ee767
+    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/xyonium/firecrawl-research-proxy@sha256:9d79159b1e5dc94b4213ea4cf5d4c00626d20284dcd15baaf90a9a46b11ee767
     container_name: firecrawl-research-proxy
     restart: unless-stopped
     environment:
@@ -137,7 +137,7 @@ services:
   # 镜像由 .github/workflows/papers-service-image.yml 构建推 ghcr 并钉 digest 回本文件；
   # tool.py 升级后手动 workflow_dispatch 一把即出新镜像。
   papers-service:
-    image: ${JCR_REGISTRY}/ghcr/xyonium/firecrawl-papers-service@sha256:5a056d9d145f956fd5b080ea1647abe7a2cb5a97d25462e9a45e6140acf2fd48
+    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/xyonium/firecrawl-papers-service@sha256:5a056d9d145f956fd5b080ea1647abe7a2cb5a97d25462e9a45e6140acf2fd48
     container_name: firecrawl-papers-service
     restart: unless-stopped
     environment:
@@ -169,7 +169,7 @@ services:
   # （3.23 时代曾正向重写 /mcp→/v2/mcp，上游路径策略翻转后必须跟着翻。）
   # 标签里的 $$ 是给 compose 部署期插值的转义，部署后 traefik 看到的是 $1。
   firecrawl-mcp:
-    image: ${JCR_REGISTRY}/ghcr/firecrawl/firecrawl-mcp-server:latest
+    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/firecrawl-mcp-server:latest
     container_name: firecrawl-mcp
     restart: unless-stopped
     entrypoint: ["sh", "-c"]

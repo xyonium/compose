@@ -82,7 +82,7 @@
 | 变量 | 说明 | 形态示例 |
 |---|---|---|
 | `FIRECRAWL_DOMAIN` 🆕 | 对外 FQDN。api 与 firecrawl-mcp 两组 traefik 路由的 Host、MCP 启动 patch 写入 dist 的 parse 端点全部由它派生 | `firecrawl.example.com` |
-| `JCR_REGISTRY` 🆕 | 私服镜像 mirror 主机名。**只写主机名**（不带协议不带路径）；全部 11 个镜像 ref 为 `${JCR_REGISTRY}/…` | `registry.company.example` |
+| `JCR_REGISTRY` 🆕 | 私服镜像 mirror 主机名。**只写主机名**（不带协议不带路径）。**可不设**：不设/空串时镜像回落 ghcr.io / docker.io 官方源 | `registry.company.example` |
 | `MINERU_BASE_URL` 🆕 | pdf-ocr 转发的自托管 MinerU 完整 URL（带端口）。无默认——不配则扫描件 OCR 静默降级 pdf-parse | `http://mineru.internal.example:8800` |
 
 **既有密钥/开关保持不变**：`PARSE_UPLOAD_REF_SECRET`、research-proxy 的 `GITHUB_TOKENS` /
@@ -122,7 +122,7 @@ compose 用本分支的 `docker-compose.yaml`（预合并单文件）；变量�
 2. 与本分支的 override 合并（`docker compose config --no-interpolate`，保留 `${VAR}` 模板）
 3. **镜像 digest 钉版**：4 个 firecrawl 系上游镜像（`firecrawl` / `playwright-service` /
    `nuq-postgres` / `firecrawl-mcp-server`）按 ghcr 原名解析 digest，纯字面替换写回
-   `${JCR_REGISTRY}/...` 模板行（`...@sha256:...`）。`workflow_dispatch` 的 `pin_mode`
+   `${JCR_REGISTRY:-…}${JCR_REGISTRY:+…}/...` 模板行（`...@sha256:...`）。`workflow_dispatch` 的 `pin_mode`
    输入：`latest`（默认，解析上游最新——即升级通道）/ `keep`（保留旧产物里的 digest，
    用于不升级只验证合并的受控运行）。3 个自研服务镜像不在此处钉——由本分支各自的
    build workflow 钉版。
