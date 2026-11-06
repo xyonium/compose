@@ -236,6 +236,7 @@ jobs:
             "container_name: netbird-dashboard" \
             "container_name: netbird-proxy" \
             "container_name: netbird-relay" \
+            "container_name: netbird-pg" \
             "management.ProxyService/" \
             '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/netbirdio' \
             '${NETBIRD_CERT_DIR}' \
@@ -247,6 +248,8 @@ jobs:
             "netbird_config" \
             "netbird_proxy_certs" \
             "relay_data" \
+            "netbird_pg_data" \
+            'POSTGRES_PASSWORD: ${NB_PG_PASSWORD}' \
             'NB_PROXY_TOKEN: ${NB_PROXY_TOKEN}' \
             'NB_AUTH_SECRET: ${NB_RELAY_AUTH_SECRET}' \
             'rels://relay.${NETBIRD_DOMAIN}:9443' \
@@ -283,12 +286,14 @@ jobs:
           python3 - <<'PYEOF'
           import yaml, sys
           d = yaml.safe_load(open('docker-compose.yaml'))
-          assert set(d.get('services', {})) == {'dashboard','netbird-server','relay','proxy'}, \
+          assert set(d.get('services', {})) == {'dashboard','netbird-server','relay','proxy','netbird-pg'}, \
               f"services mismatch: {list(d.get('services', {}))}"
           t = open('docker-compose.yaml').read()
           missing = [v for v in ('${NETBIRD_DOMAIN}','${JCR_REGISTRY','${NETBIRD_CERT_DIR}',
-                                 '${NB_PROXY_TOKEN}','${NB_RELAY_AUTH_SECRET}') if v not in t]
+                                 '${NB_PROXY_TOKEN}','${NB_RELAY_AUTH_SECRET}',
+                                 '${NB_PG_PASSWORD}') if v not in t]
           assert not missing, f"missing env templates: {missing}"
+          # postgres 是稳定第三方镜像，按仓库约定浮动 tag 不钉；netbirdio 4 个主镜像钉 digest
           assert t.count('@sha256:') == 4, "expected 4 pinned images"
           import re as _re
           assert 'netbird.your-domain.example' not in t and \
