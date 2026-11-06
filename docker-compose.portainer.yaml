@@ -23,7 +23,7 @@ services:
       - app:/app/api/storage
 
   api:
-    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api:1.18.0
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api:1.19.0
     env_file: !reset null
     volumes:
       - app:/app/api/storage
@@ -41,29 +41,29 @@ services:
       - "traefik.http.routers.difyapihttp.middlewares=http2https"
 
   api_websocket:
-    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api:1.18.0
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api:1.19.0
     env_file: !reset null
     volumes:
       - app:/app/api/storage
 
   worker:
-    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api:1.18.0
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api:1.19.0
     env_file: !reset null
     volumes:
       - app:/app/api/storage
 
   worker_beat:
-    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api:1.18.0
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api:1.19.0
     env_file: !reset null
     volumes:
       - app:/app/api/storage
 
   worker_knowledge_fs_upgrade:
-    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api:1.18.0
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api:1.19.0
     env_file: !reset null
 
   web:
-    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-web:1.18.0
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-web:1.19.0
     env_file: !reset null
     expose:
       - '3000'
@@ -93,11 +93,11 @@ services:
     env_file: !reset null
 
   local_sandbox:
-    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-agent-local-sandbox:1.18.0
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-agent-local-sandbox:1.19.0
     env_file: !reset null
 
   plugin_daemon:
-    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-plugin-daemon:0.6.11-local
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-plugin-daemon:0.6.14-local
     env_file: !reset null
     # 摘掉上游的 debug 宿主端口映射，外部访问只走 traefik
     ports: !reset null
@@ -132,7 +132,7 @@ services:
     env_file: !reset null
 
   agent_backend:
-    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-agent-backend:1.18.0
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-agent-backend:1.19.0
     env_file: !reset null
 
   agent_ssrf_proxy:
