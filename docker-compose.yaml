@@ -43,6 +43,31 @@ services:
     networks:
       reverse-proxy: null
     restart: unless-stopped
+  netbird-pg:
+    container_name: netbird-pg
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_DB: netbird
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C
+      POSTGRES_PASSWORD: ${NB_PG_PASSWORD}
+      POSTGRES_USER: netbird
+    healthcheck:
+      interval: 10s
+      retries: 6
+      start_period: 30s
+      test:
+        - CMD-SHELL
+        - pg_isready -U netbird -d netbird
+      timeout: 5s
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/library/postgres:16-alpine
+    networks:
+      reverse-proxy: null
+    restart: unless-stopped
+    volumes:
+      - source: netbird_pg_data
+        target: /var/lib/postgresql/data
+        type: volume
+        volume: {}
   netbird-server:
     command:
       - --config
@@ -167,6 +192,8 @@ volumes:
     name: netbird_netbird_config
   netbird_data:
     name: netbird_netbird_data
+  netbird_pg_data:
+    name: netbird_netbird_pg_data
   netbird_proxy_certs:
     name: netbird_netbird_proxy_certs
   relay_data:
