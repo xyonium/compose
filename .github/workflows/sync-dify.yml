@@ -90,9 +90,9 @@ jobs:
           import re, subprocess, sys, os
 
           pins = [
-              ('${JCR_REGISTRY}/docker/langgenius/dify-api', 5),
-              ('${JCR_REGISTRY}/docker/langgenius/dify-web', 1),
-              ('${JCR_REGISTRY}/docker/langgenius/dify-plugin-daemon', 1),
+              ('${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api', 5),
+              ('${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-web', 1),
+              ('${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-plugin-daemon', 1),
           ]
           pin_mode = os.environ.get('PIN_MODE', 'latest')
           assert pin_mode in ('latest', 'keep'), pin_mode
@@ -172,12 +172,12 @@ jobs:
           for needle in \
             "name: dify" \
             'Host(`${DIFY_DOMAIN}`)' \
-            '${JCR_REGISTRY}/docker/langgenius/dify-api' \
-            '${JCR_REGISTRY}/docker/langgenius/dify-web' \
-            '${JCR_REGISTRY}/docker/langgenius/dify-plugin-daemon' \
-            '${JCR_REGISTRY}/docker/postgres' \
-            '${JCR_REGISTRY}/docker/redis' \
-            '${JCR_REGISTRY}/docker/semitechnologies/weaviate' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-web' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-plugin-daemon' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/postgres' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/redis' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/semitechnologies/weaviate' \
             "SECRET_KEY" \
             "DB_PASSWORD" \
             "WEAVIATE_AUTHENTICATION_APIKEY_ALLOWED_KEYS" \
@@ -213,7 +213,7 @@ jobs:
           assert nginx_profiles == ['nginx'], \
               f"nginx profile drift (should stay out of default startup): {nginx_profiles}"
           t = open('docker-compose.yaml').read()
-          missing = [v for v in ('${JCR_REGISTRY}', '${DIFY_DOMAIN}') if v not in t]
+          missing = [v for v in ('${JCR_REGISTRY', '${DIFY_DOMAIN}') if v not in t]
           assert not missing, f"missing env templates: {missing}"
           base = open('docker-compose.upstream.yaml').read().count('@sha256:')
           assert t.count('@sha256:') == 7 + base, \

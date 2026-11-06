@@ -74,8 +74,8 @@ jobs:
           import re, subprocess, sys, os
 
           pins = [
-              ('${JCR_REGISTRY}/docker/n8nio/n8n', 'n8nio/n8n:latest', 2),
-              ('${JCR_REGISTRY}/docker/n8nio/runners', 'n8nio/runners:latest', 2),
+              ('${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/n8nio/n8n', 'n8nio/n8n:latest', 2),
+              ('${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/n8nio/runners', 'n8nio/runners:latest', 2),
           ]
           pin_mode = os.environ.get('PIN_MODE', 'latest')
           assert pin_mode in ('latest', 'keep'), pin_mode
@@ -131,10 +131,10 @@ jobs:
           for needle in \
             "name: n8n" \
             'Host(`${N8N_DOMAIN}`)' \
-            '${JCR_REGISTRY}/docker/n8nio/n8n' \
-            '${JCR_REGISTRY}/docker/n8nio/runners' \
-            '${JCR_REGISTRY}/docker/postgres' \
-            '${JCR_REGISTRY}/docker/redis' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/n8nio/n8n' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/n8nio/runners' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/postgres' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/redis' \
             "PGDATA" \
             "db_storage" \
             "n8n_storage" \
@@ -167,7 +167,7 @@ jobs:
           assert not d['services']['n8n'].get('ports'), \
               "n8n ports !reset drift — host port mapping is back"
           t = open('docker-compose.yaml').read()
-          missing = [v for v in ('${JCR_REGISTRY}', '${N8N_DOMAIN}',
+          missing = [v for v in ('${JCR_REGISTRY', '${N8N_DOMAIN}',
                                  'POSTGRES_PASSWORD', '${ENCRYPTION_KEY}',
                                  '${RUNNERS_AUTH_TOKEN}') if v not in t]
           assert not missing, f"missing env templates: {missing}"

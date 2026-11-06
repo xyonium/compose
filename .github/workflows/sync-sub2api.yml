@@ -70,7 +70,7 @@ jobs:
           python3 - <<'PYEOF'
           import re, subprocess, sys, os
 
-          lit = '${JCR_REGISTRY}/docker/weishaw/sub2api'
+          lit = '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/weishaw/sub2api'
           ref = 'weishaw/sub2api:latest'
           pin_mode = os.environ.get('PIN_MODE', 'latest')
           assert pin_mode in ('latest', 'keep'), pin_mode
@@ -130,9 +130,9 @@ jobs:
           for needle in \
             "name: sub2api" \
             'Host(`${SUB2API_DOMAIN}`)' \
-            '${JCR_REGISTRY}/docker/weishaw/sub2api' \
-            '${JCR_REGISTRY}/docker/postgres' \
-            '${JCR_REGISTRY}/docker/redis' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/weishaw/sub2api' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/postgres' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/redis' \
             '${POSTGRES_PASSWORD:?' \
             "PGDATA" \
             "sub2api_data" \
@@ -165,7 +165,7 @@ jobs:
           assert not d['services']['sub2api'].get('ports'), \
               "sub2api ports !reset drift — host port mapping is back"
           t = open('docker-compose.yaml').read()
-          missing = [v for v in ('${JCR_REGISTRY}', '${SUB2API_DOMAIN}',
+          missing = [v for v in ('${JCR_REGISTRY', '${SUB2API_DOMAIN}',
                                  '${POSTGRES_PASSWORD') if v not in t]
           assert not missing, f"missing env templates: {missing}"
           assert t.count('@sha256:') == 1, f"expected 1 pinned image, got {t.count('@sha256:')}"
