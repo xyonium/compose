@@ -78,7 +78,7 @@ services:
       - RUNPOD_MU_POD_ID=${RUNPOD_MU_POD_ID:-local}
     extra_hosts:
       - host.docker.internal:host-gateway
-    image: ${JCR_REGISTRY}/ghcr/firecrawl/firecrawl@sha256:95923f46752f4b6916450d577e12371d5ef7365a50960fc74ed7e252a3aa83c4
+    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/firecrawl@sha256:9197579f5d43770eae05c0f873bf7187ee9244b4dde124923e80c8ed4b07f1aa
     labels:
       - traefik.enable=true
       - traefik.http.routers.firecrawl.rule=Host(`${FIRECRAWL_DOMAIN}`)
@@ -114,14 +114,6 @@ services:
         volume: {}
   firecrawl-mcp:
     command:
-      # 3.33.4 起上游镜像以 node(uid=1000) 运行且 /app/dist 属 root 不可写
-      # —— 先拷到 /app 内可写副本，patch 副本，再 exec 副本。用 /tmp/app-root
-      # 而不是 /app 内位置是因为 dist/index.js 有 require("../package.json")
-      # （模块 scope 判定），拷到 /app/dist-patched 会沿父目录读到 app/package.json，
-      # 而 /app 本身已带 package.json 会被误判为 pristine 副本。cp 整个 /app
-      # 到 /tmp/app-root 保证 package.json 跟随 dist 一起被解析。
-      # node_modules 本身属 root 无执行权限问题，直接用 /app/node_modules。
-      # 重启时 rm 重拷，保证 patch 总在 pristine 底子上跑、幂等不误伤。
       - |
         rm -rf /tmp/app-root && cp -r /app /tmp/app-root && node -e '
         const fs = require("fs"), path = require("path");
@@ -574,11 +566,8 @@ services:
     environment:
       FIRECRAWL_API_URL: http://api:3002
       FIRECRAWL_DOMAIN: ${FIRECRAWL_DOMAIN}
-      FIRECRAWL_NO_ENDPOINT_FEEDBACK: "true"
-      # gov 检索云端路由（#17 生效）：不设=云端免费档 keyless 直连；
-      # 设为 key-rotator 前缀（http://<rotator>:8788/firecrawl，不带尾斜杠）
-      # 则走带 key 通道，速率上限高且有审计日志。内网主机名按安全原则走项目 env。
       FIRECRAWL_GOV_BASE_URL: ${FIRECRAWL_GOV_BASE_URL}
+      FIRECRAWL_NO_ENDPOINT_FEEDBACK: "true"
       FIRECRAWL_NO_SEARCH_FEEDBACK: "true"
       FIRECRAWL_RETRY_INITIAL_DELAY: "500"
       FIRECRAWL_RETRY_MAX_ATTEMPTS: "10"
@@ -586,7 +575,7 @@ services:
       HTTP_STREAMABLE_SERVER: "true"
     expose:
       - "3000"
-    image: ${JCR_REGISTRY}/ghcr/firecrawl/firecrawl-mcp-server@sha256:6a8f0a95ecfa3bb946cf2b128e2196662424454342d4bf15557a0e4adc092a9e
+    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/firecrawl-mcp-server@sha256:f0a646f93dc1c06b2620111a69051c123643f6a2a3cb526e8b1a28d255d103db
     labels:
       - traefik.enable=true
       - traefik.docker.network=reverse-proxy
@@ -607,7 +596,7 @@ services:
     environment:
       FDB_COORDINATOR_PORT: 4500
       FDB_NETWORKING_MODE: container
-    image: ${JCR_REGISTRY}/docker/foundationdb/foundationdb:7.3.63
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/foundationdb/foundationdb:7.3.63
     logging:
       driver: json-file
       options:
@@ -637,7 +626,7 @@ services:
         sleep 5 && out=$(fdbcli -C /var/fdb/fdb.cluster --exec 'configure new single ssd' 2>&1); status=$$?; printf '%s
         ' "$$out"; if [ "$$status" -eq 0 ]; then exit 0; fi; printf '%s
         ' "$$out" | grep -Eiq 'already.*configured|database.*configured|database.*already exists'
-    image: ${JCR_REGISTRY}/docker/foundationdb/foundationdb:7.3.63
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/foundationdb/foundationdb:7.3.63
     networks:
       backend: null
     restart: "no"
@@ -659,7 +648,7 @@ services:
         - CMD-SHELL
         - pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}
       timeout: 5s
-    image: ${JCR_REGISTRY}/ghcr/firecrawl/nuq-postgres@sha256:d719b36160eac2fcbe16dc7e7360ddb9c82c40ea5da183d07bf4a755c6a0b2ae
+    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/nuq-postgres@sha256:d719b36160eac2fcbe16dc7e7360ddb9c82c40ea5da183d07bf4a755c6a0b2ae
     logging:
       driver: json-file
       options:
@@ -688,7 +677,7 @@ services:
       UNPAYWALL_EMAIL: ${UNPAYWALL_EMAIL:-}
       ZENODO_ACCESS_TOKEN: ${ZENODO_ACCESS_TOKEN:-}
       ZHIHUIYA_APIKEY: ${ZHIHUIYA_APIKEY:-}
-    image: ${JCR_REGISTRY}/ghcr/xyonium/firecrawl-papers-service@sha256:5a056d9d145f956fd5b080ea1647abe7a2cb5a97d25462e9a45e6140acf2fd48
+    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/xyonium/firecrawl-papers-service@sha256:5a056d9d145f956fd5b080ea1647abe7a2cb5a97d25462e9a45e6140acf2fd48
     networks:
       backend: null
       owui: null
@@ -699,7 +688,7 @@ services:
     environment:
       MINERU_BACKEND: ${MINERU_BACKEND:-pipeline}
       MINERU_BASE_URL: ${MINERU_BASE_URL}
-    image: ${JCR_REGISTRY}/ghcr/xyonium/firecrawl-pdf-ocr@sha256:f29ebd525ce65fe27427ab9e355609fe541985044f810a4df8908e5dd885f9c6
+    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/xyonium/firecrawl-pdf-ocr@sha256:f29ebd525ce65fe27427ab9e355609fe541985044f810a4df8908e5dd885f9c6
     networks:
       backend: null
     restart: unless-stopped
@@ -715,7 +704,7 @@ services:
       PROXY_PASSWORD: ${PROXY_PASSWORD}
       PROXY_SERVER: ${PROXY_SERVER}
       PROXY_USERNAME: ${PROXY_USERNAME}
-    image: ${JCR_REGISTRY}/ghcr/firecrawl/playwright-service@sha256:5c6690c0d6606aaffbe146398526fecbe82bcba6eb4af881969745908c90d00d
+    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/playwright-service@sha256:637fb8c8399634b02c2179da72566ce11644435e5d93e895bdbde4b1f9b0882a
     logging:
       driver: json-file
       options:
@@ -748,7 +737,7 @@ services:
         - -q
         - check_running
       timeout: 5s
-    image: ${JCR_REGISTRY}/docker/rabbitmq:3-management
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/rabbitmq:3-management
     logging:
       driver: json-file
       options:
@@ -774,7 +763,7 @@ services:
         - redis-cli
         - ping
       timeout: 5s
-    image: ${JCR_REGISTRY}/docker/redis:alpine
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/redis:alpine
     logging:
       driver: json-file
       options:
@@ -798,7 +787,7 @@ services:
       PAPERS_BASE_URL: ${PAPERS_BASE_URL:-http://papers-service:3200}
       REACH_BASE_URL: ${REACH_BASE_URL:-http://mcpo:8000}
       SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
-    image: ${JCR_REGISTRY}/ghcr/xyonium/firecrawl-research-proxy@sha256:9d79159b1e5dc94b4213ea4cf5d4c00626d20284dcd15baaf90a9a46b11ee767
+    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/xyonium/firecrawl-research-proxy@sha256:9d79159b1e5dc94b4213ea4cf5d4c00626d20284dcd15baaf90a9a46b11ee767
     networks:
       backend: null
       reverse-proxy: null
