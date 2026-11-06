@@ -72,10 +72,10 @@ jobs:
           import re, subprocess, sys, os
 
           PINS = [
-              ('${JCR_REGISTRY}/ghcr/firecrawl/firecrawl',            'ghcr.io/firecrawl/firecrawl:latest'),
-              ('${JCR_REGISTRY}/ghcr/firecrawl/playwright-service',   'ghcr.io/firecrawl/playwright-service:latest'),
-              ('${JCR_REGISTRY}/ghcr/firecrawl/nuq-postgres',         'ghcr.io/firecrawl/nuq-postgres:latest'),
-              ('${JCR_REGISTRY}/ghcr/firecrawl/firecrawl-mcp-server', 'ghcr.io/firecrawl/firecrawl-mcp-server:latest'),
+              ('${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/firecrawl',            'ghcr.io/firecrawl/firecrawl:latest'),
+              ('${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/playwright-service',   'ghcr.io/firecrawl/playwright-service:latest'),
+              ('${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/nuq-postgres',         'ghcr.io/firecrawl/nuq-postgres:latest'),
+              ('${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/firecrawl-mcp-server', 'ghcr.io/firecrawl/firecrawl-mcp-server:latest'),
           ]
           pin_mode = os.environ.get('PIN_MODE', 'latest')
           assert pin_mode in ('latest', 'keep'), pin_mode
@@ -153,8 +153,8 @@ jobs:
             "container_name: firecrawl-pdf-ocr" \
             "container_name: firecrawl-papers-service" \
             "RESEARCH_PROXY_URL" \
-            '${JCR_REGISTRY}/ghcr/firecrawl/firecrawl' \
-            '${JCR_REGISTRY}/ghcr/xyonium/firecrawl-papers-service' \
+            '${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/firecrawl' \
+            '${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/xyonium/firecrawl-papers-service' \
             'Host(`${FIRECRAWL_DOMAIN}`)' \
             'tls=true' \
             "http2https" \
@@ -186,7 +186,7 @@ jobs:
           got = set(d.get('services', {}))
           assert got == expect, f"services mismatch: {sorted(got ^ expect)}"
           t = open('docker-compose.yaml').read()
-          missing = [v for v in ('${JCR_REGISTRY}', '${FIRECRAWL_DOMAIN}',
+          missing = [v for v in ('${JCR_REGISTRY', '${FIRECRAWL_DOMAIN}',
                                  '${MINERU_BASE_URL}', '${PARSE_UPLOAD_REF_SECRET',
                                  '${GITHUB_TOKENS') if v not in t]
           assert not missing, f"missing env templates: {missing}"
