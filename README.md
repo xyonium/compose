@@ -21,7 +21,7 @@
 | 变量 | 说明 |
 |---|---|
 | `DIFY_DOMAIN` | 对外域名，如 `dify.example.com`（不带 scheme） |
-| `JCR_REGISTRY` | 私服 mirror 主机名（不带前导/后缀 `/`） |
+| `JCR_REGISTRY` | 私服 mirror 主机名（不带前导/后缀 `/`）。**可不设**：不设/空串时镜像回落 docker.io 官方源 |
 | `SECRET_KEY` | dify 会话签名 key，`openssl rand -base64 42` 生成 |
 | `INIT_PASSWORD` | 首个管理员账号初始密码 |
 | `DB_PASSWORD` | postgres 密码 |
