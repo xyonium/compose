@@ -59,6 +59,40 @@ services:
       - "traefik.http.routers.netbird-http.entrypoints=web"
       - "traefik.http.routers.netbird-http.middlewares=http2https"
 
+  # PostgreSQL 16：netbird 各 store 的后端（store / activityStore / authStore /
+  # accessLogStore）。SQLite 是嵌入式单连接（强制 MaxOpenConns=1），peer 规模上去后
+  # 并发写入会排队；PG 池化到 30 连接，也是未来多 management 副本（HA）的硬前提。
+  #
+  # 部署要点：
+  #   - 不暴露宿主端口，仅容器网络可达（server 用容器名 netbird-pg:5432 直连）
+  #   - 三个库首次部署时手工 CREATE：netbird / netbird_events / netbird_auth
+  #   - accessLogStore 不单独建库：access_logs 表由服务端启动时在 netbird 库自动建
+  #   - 密码走项目 env NB_PG_PASSWORD（不进 git）
+  #   - ⚠️ server.store.encryptionKey 必须与迁移前逐字节相同，否则已加密字段不可读
+  netbird-pg:
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/library/postgres:16-alpine
+    container_name: netbird-pg
+    restart: unless-stopped
+    # 不映射宿主端口：仅 compose 内网可达
+    ports: !reset null
+    environment:
+      POSTGRES_USER: netbird
+      POSTGRES_PASSWORD: ${NB_PG_PASSWORD}
+      POSTGRES_DB: netbird
+      # 数据落在子目录：卷根可能有 lost+found，initdb 拒绝非空目录
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - netbird_pg_data:/var/lib/postgresql/data
+    networks:
+      - reverse-proxy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netbird -d netbird"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
   netbird-server:
     image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/netbirdio/netbird-server:latest
     # STUN 移到 relay 容器（config.yaml 里配了外部 stuns/relays 后内嵌 STUN/relay 自动关闭）
@@ -145,3 +179,4 @@ services:
 volumes:
   netbird_config:
   relay_data:
+  netbird_pg_data:
