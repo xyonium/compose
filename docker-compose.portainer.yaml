@@ -85,6 +85,12 @@ services:
 
   redis:
     image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/redis:6-alpine
+    env_file: !reset null
+    # 上游 1.19.0 用 env_file 提供这两个容器变量（envs/databases/redis.defaults），
+    # 本栈清掉 env_file 后在 environment 内联等价取值
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-difyai123456}
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-difyai123456}
     volumes:
       - redis:/data
 
@@ -137,9 +143,23 @@ services:
 
   agent_ssrf_proxy:
     image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/ubuntu/squid:latest
+    env_file: !reset null
+    # 上游 1.19.0 用 env_file 提供这些容器变量（envs/infrastructure/ssrf-proxy.defaults），
+    # 本栈清掉 env_file 后在 environment 内联等价取值
+    environment:
+      HTTP_PORT: ${SSRF_HTTP_PORT:-3128}
+      COREDUMP_DIR: ${SSRF_COREDUMP_DIR:-/var/spool/squid}
+      SSRF_PROXY_ALLOW_PRIVATE_IPS: ${SSRF_PROXY_ALLOW_PRIVATE_IPS:-}
+      SSRF_PROXY_ALLOW_PRIVATE_DOMAINS: ${SSRF_PROXY_ALLOW_PRIVATE_DOMAINS:-}
 
   ssrf_proxy:
     image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/ubuntu/squid:latest
+    env_file: !reset null
+    environment:
+      HTTP_PORT: ${SSRF_HTTP_PORT:-3128}
+      COREDUMP_DIR: ${SSRF_COREDUMP_DIR:-/var/spool/squid}
+      SSRF_PROXY_ALLOW_PRIVATE_IPS: ${SSRF_PROXY_ALLOW_PRIVATE_IPS:-}
+      SSRF_PROXY_ALLOW_PRIVATE_DOMAINS: ${SSRF_PROXY_ALLOW_PRIVATE_DOMAINS:-}
 
   nginx:
     # 摘出默认启动：外部访问走部署主机 traefik，不经 nginx
