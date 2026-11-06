@@ -158,7 +158,7 @@ jobs:
             'Host(`${FIRECRAWL_DOMAIN}`)' \
             'tls=true' \
             "http2https" \
-            "mcp-legacy-to-v2" \
+            "mcp-v2-to-legacy" \
             '${MINERU_BASE_URL}' \
             "reverse-proxy" \
             "traefik.enable" \
