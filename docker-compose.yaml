@@ -25,7 +25,7 @@ services:
         - CMD-SHELL
         - pg_isready -U ${POSTGRES_USER:-sub2api} -d ${POSTGRES_DB:-sub2api} && psql -U ${POSTGRES_USER:-sub2api} -d ${POSTGRES_DB:-sub2api} -Atqc 'SELECT 1' >/dev/null
       timeout: 5s
-    image: ${JCR_REGISTRY}/docker/postgres:18-alpine
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/postgres:18-alpine
     networks:
       sub2api-network: null
     restart: unless-stopped
@@ -63,7 +63,7 @@ services:
         - redis-cli
         - ping
       timeout: 5s
-    image: ${JCR_REGISTRY}/docker/redis:8-alpine
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/redis:8-alpine
     networks:
       sub2api-network: null
     restart: unless-stopped
@@ -91,6 +91,7 @@ services:
       - SERVER_PORT=8080
       - SERVER_MODE=${SERVER_MODE:-release}
       - ENABLE_SERVER_TIMING=${ENABLE_SERVER_TIMING:-false}
+      - MCP_PUBLIC_URL=${MCP_PUBLIC_URL:-}
       - RUN_MODE=${RUN_MODE:-standard}
       - SIMPLE_MODE_AUTO_CREATE_DEFAULT_GROUPS=${SIMPLE_MODE_AUTO_CREATE_DEFAULT_GROUPS:-}
       - SIMPLE_MODE_KEY_RATE_LIMIT_ENABLED=${SIMPLE_MODE_KEY_RATE_LIMIT_ENABLED:-false}
@@ -137,6 +138,7 @@ services:
       - GATEWAY_OPENAI_COMPACT_MODEL=${GATEWAY_OPENAI_COMPACT_MODEL:-gpt-5.5}
       - SUB2API_IMAGES_MAIN_MODEL=${SUB2API_IMAGES_MAIN_MODEL:-gpt-5.6-luna}
       - GATEWAY_OPENAI_RESPONSE_HEADER_TIMEOUT=${GATEWAY_OPENAI_RESPONSE_HEADER_TIMEOUT:-0}
+      - GATEWAY_DISABLE_OPENAI_TRANSPORT_ERROR_COOLDOWN=${GATEWAY_DISABLE_OPENAI_TRANSPORT_ERROR_COOLDOWN:-false}
       - GATEWAY_OPENAI_WS_FORCE_HTTP=${GATEWAY_OPENAI_WS_FORCE_HTTP:-false}
       - GATEWAY_OPENAI_HTTP2_ENABLED=${GATEWAY_OPENAI_HTTP2_ENABLED:-true}
       - GATEWAY_OPENAI_HTTP2_ALLOW_PROXY_FALLBACK_TO_HTTP1=${GATEWAY_OPENAI_HTTP2_ALLOW_PROXY_FALLBACK_TO_HTTP1:-true}
@@ -187,7 +189,7 @@ services:
         - /dev/null
         - http://localhost:8080/health
       timeout: 10s
-    image: ${JCR_REGISTRY}/docker/weishaw/sub2api@sha256:411d9ca53be0dded773f7418e570bbdc4834c2cf6ff4ecad4e5347f882b6e79b
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/weishaw/sub2api@sha256:969e5c0fddc13f52be2772ea86e8e03ee2261f80ff08495916ffff68292c8380
     labels:
       - traefik.enable=true
       - traefik.docker.network=reverse-proxy
