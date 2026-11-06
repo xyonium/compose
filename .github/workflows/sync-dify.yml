@@ -183,9 +183,9 @@ jobs:
             '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/postgres' \
             '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/redis' \
             '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/semitechnologies/weaviate' \
-            "SECRET_KEY" \
-            "DB_PASSWORD" \
-            "WEAVIATE_AUTHENTICATION_APIKEY_ALLOWED_KEYS" \
+            "MODE: api" \
+            "MODE: worker" \
+            "PLUGIN_REMOTE_INSTALLING_PORT" \
             "reverse-proxy" \
             "traefik.enable" \
             "tls=true" \
