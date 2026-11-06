@@ -32,19 +32,8 @@ services:
         condition: service_started
         required: true
     environment:
-      DIFY_AGENT_API_TOKEN: ${DIFY_AGENT_API_TOKEN:-dify-agent-run-token-for-dev-only}
-      DIFY_AGENT_INNER_API_KEY: ${DIFY_AGENT_INNER_API_KEY:-${PLUGIN_DIFY_INNER_API_KEY:-QaHbTe77CtuXmsfyhR7+vRjI/+XbV1AaFy691iy+kGDv2Jvy0/eAh8Y1}}
-      DIFY_AGENT_INNER_API_URL: ${DIFY_AGENT_INNER_API_URL:-${PLUGIN_DIFY_INNER_API_URL:-http://api:5001}}
       DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN: ${DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN:-${DIFY_AGENT_SHELLCTL_AUTH_TOKEN:-}}
-      DIFY_AGENT_LOCAL_SANDBOX_ENDPOINT: ${DIFY_AGENT_LOCAL_SANDBOX_ENDPOINT:-${DIFY_AGENT_SHELLCTL_ENTRYPOINT:-http://local_sandbox:5004}}
-      DIFY_AGENT_PLUGIN_DAEMON_API_KEY: ${DIFY_AGENT_PLUGIN_DAEMON_API_KEY:-${PLUGIN_DAEMON_KEY:-lYkiYYT6owG+71oLerGzA7GXCgOT++6ovaezWAjpCjf+Sjc3ZtU+qUEi}}
-      DIFY_AGENT_PLUGIN_DAEMON_URL: ${DIFY_AGENT_PLUGIN_DAEMON_URL:-${PLUGIN_DAEMON_URL:-http://plugin_daemon:5002}}
-      DIFY_AGENT_REDIS_URL: ${DIFY_AGENT_REDIS_URL:-redis://:${REDIS_PASSWORD:-difyai123456}@redis:6379/2}
-      DIFY_AGENT_RUNTIME_BACKEND: ${DIFY_AGENT_RUNTIME_BACKEND:-local}
-      DIFY_AGENT_SANDBOX_FILES_BASE_URL: ${DIFY_AGENT_SANDBOX_FILES_BASE_URL:-http://api:5001}
-      DIFY_AGENT_SERVER_SECRET_KEY: ${DIFY_AGENT_SERVER_SECRET_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY}
-      DIFY_AGENT_STUB_API_BASE_URL: ${DIFY_AGENT_STUB_API_BASE_URL:-http://agent_backend:5050/agent-stub}
-    image: ${JCR_REGISTRY}/docker/langgenius/dify-agent-backend:1.18.0
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-agent-backend:1.19.0
     networks:
       agent_sandbox_network: null
       default: null
@@ -59,7 +48,7 @@ services:
       HTTP_PORT: ${SSRF_HTTP_PORT:-3128}
       SSRF_PROXY_ALLOW_PRIVATE_DOMAINS: ${SSRF_PROXY_ALLOW_PRIVATE_DOMAINS:-}
       SSRF_PROXY_ALLOW_PRIVATE_IPS: ${SSRF_PROXY_ALLOW_PRIVATE_IPS:-}
-    image: ${JCR_REGISTRY}/docker/ubuntu/squid:latest
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/ubuntu/squid:latest
     networks:
       default: null
       local_sandbox_proxy_network: null
@@ -104,18 +93,7 @@ services:
         condition: service_healthy
         required: false
     environment:
-      AGENT_BACKEND_API_TOKEN: ${DIFY_AGENT_API_TOKEN:-dify-agent-run-token-for-dev-only}
-      AGENT_BACKEND_BASE_URL: ${AGENT_BACKEND_BASE_URL:-http://agent_backend:5050}
-      INNER_API_KEY_FOR_PLUGIN: ${PLUGIN_DIFY_INNER_API_KEY:-QaHbTe77CtuXmsfyhR7+vRjI/+XbV1AaFy691iy+kGDv2Jvy0/eAh8Y1}
       MODE: api
-      PLUGIN_DAEMON_TIMEOUT: ${PLUGIN_DAEMON_TIMEOUT:-600.0}
-      PLUGIN_MAX_PACKAGE_SIZE: ${PLUGIN_MAX_PACKAGE_SIZE:-52428800}
-      PLUGIN_REMOTE_INSTALL_HOST: ${EXPOSE_PLUGIN_DEBUGGING_HOST:-localhost}
-      PLUGIN_REMOTE_INSTALL_PORT: ${EXPOSE_PLUGIN_DEBUGGING_PORT:-5003}
-      RESPECT_XFORWARD_HEADERS_ENABLED: ${RESPECT_XFORWARD_HEADERS_ENABLED:-true}
-      SENTRY_DSN: ${API_SENTRY_DSN:-}
-      SENTRY_PROFILES_SAMPLE_RATE: ${API_SENTRY_PROFILES_SAMPLE_RATE:-1.0}
-      SENTRY_TRACES_SAMPLE_RATE: ${API_SENTRY_TRACES_SAMPLE_RATE:-1.0}
     expose:
       - "5001"
     healthcheck:
@@ -128,7 +106,7 @@ services:
         - -f
         - http://localhost:5001/health
       timeout: 5s
-    image: ${JCR_REGISTRY}/docker/langgenius/dify-api:1.18.0@sha256:0120970fb4ea59aa328d63b7dda635cccc071efb8aae470cd07115a026dbffd3
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api:1.19.0@sha256:0d67842aedcb9b5884f75b88c4a5dd812e637916bff1ca892831f7ace2f3204f
     labels:
       - traefik.enable=true
       - traefik.docker.network=reverse-proxy
@@ -162,14 +140,18 @@ services:
       redis:
         condition: service_started
         required: true
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        export SERVER_WORKER_AMOUNT="$${API_WEBSOCKET_WORKER_AMOUNT:-1}"
+        export SERVER_WORKER_CLASS="$${API_WEBSOCKET_WORKER_CLASS:-geventwebsocket.gunicorn.workers.GeventWebSocketWorker}"
+        export SERVER_WORKER_CONNECTIONS="$${API_WEBSOCKET_WORKER_CONNECTIONS:-1000}"
+        export GUNICORN_TIMEOUT="$${API_WEBSOCKET_GUNICORN_TIMEOUT:-360}"
+        exec /bin/bash /entrypoint.sh
     environment:
-      GUNICORN_TIMEOUT: ${API_WEBSOCKET_GUNICORN_TIMEOUT:-360}
       MODE: api
-      RESPECT_XFORWARD_HEADERS_ENABLED: ${RESPECT_XFORWARD_HEADERS_ENABLED:-true}
-      SERVER_WORKER_AMOUNT: ${API_WEBSOCKET_WORKER_AMOUNT:-1}
-      SERVER_WORKER_CLASS: ${API_WEBSOCKET_WORKER_CLASS:-geventwebsocket.gunicorn.workers.GeventWebSocketWorker}
-      SERVER_WORKER_CONNECTIONS: ${API_WEBSOCKET_WORKER_CONNECTIONS:-1000}
-    image: ${JCR_REGISTRY}/docker/langgenius/dify-api:1.18.0@sha256:0120970fb4ea59aa328d63b7dda635cccc071efb8aae470cd07115a026dbffd3
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api:1.19.0@sha256:0d67842aedcb9b5884f75b88c4a5dd812e637916bff1ca892831f7ace2f3204f
     networks:
       default: null
       ssrf_proxy_network: null
@@ -188,10 +170,11 @@ services:
       - /dev/null
     entrypoint:
       - /docker-entrypoint.sh
-    environment:
-      - CERTBOT_EMAIL=${CERTBOT_EMAIL:-}
-      - CERTBOT_DOMAIN=${CERTBOT_DOMAIN:-}
-      - CERTBOT_OPTIONS=${CERTBOT_OPTIONS:-}
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/infrastructure/certbot.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/infrastructure/certbot.defaults
+        required: true
     image: certbot/certbot
     networks:
       default: null
@@ -229,10 +212,11 @@ services:
         target: /docker-entrypoint.sh
         type: bind
   chroma:
-    environment:
-      CHROMA_SERVER_AUTHN_CREDENTIALS: ${CHROMA_SERVER_AUTHN_CREDENTIALS:-difyai123456}
-      CHROMA_SERVER_AUTHN_PROVIDER: ${CHROMA_SERVER_AUTHN_PROVIDER:-chromadb.auth.token_authn.TokenAuthenticationServerProvider}
-      IS_PERSISTENT: ${CHROMA_IS_PERSISTENT:-TRUE}
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/vectorstores/chroma.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/vectorstores/chroma.defaults
+        required: true
     image: ghcr.io/chroma-core/chroma:0.5.20
     networks:
       default: null
@@ -253,11 +237,13 @@ services:
     container_name: couchbase-server
     entrypoint:
       - ""
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/vectorstores/couchbase.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/vectorstores/couchbase.defaults
+        required: true
     environment:
       - CLUSTER_NAME=dify_search
-      - COUCHBASE_ADMINISTRATOR_USERNAME=${COUCHBASE_USER:-Administrator}
-      - COUCHBASE_ADMINISTRATOR_PASSWORD=${COUCHBASE_PASSWORD:-password}
-      - COUCHBASE_BUCKET=${COUCHBASE_BUCKET_NAME:-Embeddings}
       - COUCHBASE_BUCKET_RAMSIZE=512
       - COUCHBASE_RAM_SIZE=2048
       - COUCHBASE_EVENTING_RAM_SIZE=512
@@ -269,7 +255,7 @@ services:
       start_period: 30s
       test:
         - CMD-SHELL
-        - curl -s -f -u Administrator:password http://localhost:8091/pools/default/buckets | grep -q '\[{' || exit 1
+        - curl -s -f -u "$$COUCHBASE_ADMINISTRATOR_USERNAME:$$COUCHBASE_ADMINISTRATOR_PASSWORD" http://localhost:8091/pools/default/buckets | grep -q '\[{' || exit 1
       timeout: 10s
     hostname: couchbase-server
     networks:
@@ -287,21 +273,23 @@ services:
         type: bind
     working_dir: /opt/couchbase
   db_mysql:
-    command: |
-      --max_connections=${MYSQL_MAX_CONNECTIONS:-1000} --innodb_buffer_pool_size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-512M} --innodb_log_file_size=${MYSQL_INNODB_LOG_FILE_SIZE:-128M} --innodb_flush_log_at_trx_commit=${MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT:-2}
-    environment:
-      MYSQL_DATABASE: ${DB_DATABASE:-dify}
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-difyai123456}
+    command:
+      - sh
+      - -c
+      - exec docker-entrypoint.sh mysqld "--max_connections=$$MYSQL_MAX_CONNECTIONS" "--innodb_buffer_pool_size=$$MYSQL_INNODB_BUFFER_POOL_SIZE" "--innodb_log_file_size=$$MYSQL_INNODB_LOG_FILE_SIZE" "--innodb_flush_log_at_trx_commit=$$MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT"
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/databases/db-postgres.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/databases/db-mysql.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/databases/db-mysql.defaults
+        required: true
     healthcheck:
       interval: 1s
       retries: 30
       test:
-        - CMD
-        - mysqladmin
-        - ping
-        - -u
-        - root
-        - -p${DB_PASSWORD:-difyai123456}
+        - CMD-SHELL
+        - mysqladmin ping -u root -p"$$MYSQL_ROOT_PASSWORD"
       timeout: 3s
     image: mysql:8.0
     networks:
@@ -315,33 +303,23 @@ services:
         type: volume
         volume: {}
   db_postgres:
-    command: |
-      postgres -c 'max_connections=${POSTGRES_MAX_CONNECTIONS:-100}'
-               -c 'shared_buffers=${POSTGRES_SHARED_BUFFERS:-128MB}'
-               -c 'work_mem=${POSTGRES_WORK_MEM:-4MB}'
-               -c 'maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-64MB}'
-               -c 'effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-4096MB}'
-               -c 'statement_timeout=${POSTGRES_STATEMENT_TIMEOUT:-0}'
-               -c 'idle_in_transaction_session_timeout=${POSTGRES_IDLE_IN_TRANSACTION_SESSION_TIMEOUT:-0}'
-    environment:
-      PGDATA: ${PGDATA:-/var/lib/postgresql/data/pgdata}
-      POSTGRES_DB: ${DB_DATABASE:-dify}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-difyai123456}
-      POSTGRES_USER: ${DB_USERNAME:-postgres}
+    command:
+      - sh
+      - -c
+      - exec docker-entrypoint.sh postgres -c "max_connections=$$POSTGRES_MAX_CONNECTIONS" -c "shared_buffers=$$POSTGRES_SHARED_BUFFERS" -c "work_mem=$$POSTGRES_WORK_MEM" -c "maintenance_work_mem=$$POSTGRES_MAINTENANCE_WORK_MEM" -c "effective_cache_size=$$POSTGRES_EFFECTIVE_CACHE_SIZE" -c "statement_timeout=$$POSTGRES_STATEMENT_TIMEOUT" -c "idle_in_transaction_session_timeout=$$POSTGRES_IDLE_IN_TRANSACTION_SESSION_TIMEOUT"
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/databases/db-postgres.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/databases/db-postgres.defaults
+        required: true
     healthcheck:
       interval: 1s
       retries: 60
       test:
-        - CMD
-        - pg_isready
-        - -h
-        - db_postgres
-        - -U
-        - ${DB_USERNAME:-postgres}
-        - -d
-        - ${DB_DATABASE:-dify}
+        - CMD-SHELL
+        - pg_isready -h db_postgres -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
       timeout: 3s
-    image: ${JCR_REGISTRY}/docker/postgres:15-alpine
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/postgres:15-alpine
     networks:
       default: null
     profiles:
@@ -362,8 +340,12 @@ services:
       - sh
       - -c
       - sh /docker-entrypoint-mount.sh
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/vectorstores/elasticsearch.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/vectorstores/elasticsearch.defaults
+        required: true
     environment:
-      ELASTIC_PASSWORD: ${ELASTICSEARCH_PASSWORD:-elastic}
       VECTOR_STORE: ${VECTOR_STORE:-}
       cluster.name: dify-es-cluster
       discovery.type: single-node
@@ -403,11 +385,13 @@ services:
   etcd:
     command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
     container_name: milvus-etcd
-    environment:
-      ETCD_AUTO_COMPACTION_MODE: ${ETCD_AUTO_COMPACTION_MODE:-revision}
-      ETCD_AUTO_COMPACTION_RETENTION: ${ETCD_AUTO_COMPACTION_RETENTION:-1000}
-      ETCD_QUOTA_BACKEND_BYTES: ${ETCD_QUOTA_BACKEND_BYTES:-4294967296}
-      ETCD_SNAPSHOT_COUNT: ${ETCD_SNAPSHOT_COUNT:-50000}
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/vectorstores/milvus.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/infrastructure/etcd.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/infrastructure/etcd.defaults
+        required: true
     healthcheck:
       interval: 30s
       retries: 3
@@ -454,9 +438,13 @@ services:
     container_name: iris
     entrypoint:
       - /custom-entrypoint.sh
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/vectorstores/iris.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/vectorstores/iris.defaults
+        required: true
     environment:
       ISC_DATA_DIRECTORY: /durable/iris
-      TZ: ${IRIS_TIMEZONE:-UTC}
     image: containers.intersystems.com/intersystems/iris-community:2025.3
     init: true
     networks:
@@ -547,7 +535,7 @@ services:
         - -e
         - fetch('http://127.0.0.1:8787/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
       timeout: 5s
-    image: ${JCR_REGISTRY}/docker/langgenius/dify-knowledge-fs-api:deploy-konwledge
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-knowledge-fs-api:deploy-konwledge
     networks:
       default: null
     profiles:
@@ -570,7 +558,7 @@ services:
       MAX_TASKS_PER_CHILD: ${KNOWLEDGE_FS_WORKER_MAX_TASKS_PER_CHILD:-1000}
       MIGRATION_ENABLED: "false"
       MODE: worker
-    image: ${KNOWLEDGE_FS_WORKER_IMAGE:-langgenius/dify-api:1.18.0}
+    image: ${KNOWLEDGE_FS_WORKER_IMAGE:-langgenius/dify-api:1.19.0}
     networks:
       default: null
     profiles:
@@ -594,7 +582,7 @@ services:
       MAX_TASKS_PER_CHILD: ${KNOWLEDGE_FS_WORKER_MAX_TASKS_PER_CHILD:-1000}
       MIGRATION_ENABLED: "false"
       MODE: worker
-    image: ${KNOWLEDGE_FS_WORKER_IMAGE:-langgenius/dify-api:1.18.0}
+    image: ${KNOWLEDGE_FS_WORKER_IMAGE:-langgenius/dify-api:1.19.0}
     networks:
       default: null
     profiles:
@@ -618,7 +606,7 @@ services:
       MAX_TASKS_PER_CHILD: ${KNOWLEDGE_FS_WORKER_MAX_TASKS_PER_CHILD:-1000}
       MIGRATION_ENABLED: "false"
       MODE: worker
-    image: ${KNOWLEDGE_FS_WORKER_IMAGE:-langgenius/dify-api:1.18.0}
+    image: ${KNOWLEDGE_FS_WORKER_IMAGE:-langgenius/dify-api:1.19.0}
     networks:
       default: null
     profiles:
@@ -642,7 +630,7 @@ services:
       MAX_TASKS_PER_CHILD: ${KNOWLEDGE_FS_WORKER_MAX_TASKS_PER_CHILD:-1000}
       MIGRATION_ENABLED: "false"
       MODE: worker
-    image: ${KNOWLEDGE_FS_WORKER_IMAGE:-langgenius/dify-api:1.18.0}
+    image: ${KNOWLEDGE_FS_WORKER_IMAGE:-langgenius/dify-api:1.19.0}
     networks:
       default: null
     profiles:
@@ -666,7 +654,7 @@ services:
       MAX_TASKS_PER_CHILD: ${KNOWLEDGE_FS_WORKER_MAX_TASKS_PER_CHILD:-1000}
       MIGRATION_ENABLED: "false"
       MODE: worker
-    image: ${KNOWLEDGE_FS_WORKER_IMAGE:-langgenius/dify-api:1.18.0}
+    image: ${KNOWLEDGE_FS_WORKER_IMAGE:-langgenius/dify-api:1.19.0}
     networks:
       default: null
     profiles:
@@ -713,7 +701,7 @@ services:
         - -f
         - http://localhost:5004/healthz
       timeout: 5s
-    image: ${JCR_REGISTRY}/docker/langgenius/dify-agent-local-sandbox:1.18.0
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-agent-local-sandbox:1.19.0
     networks:
       agent_sandbox_network: null
       local_sandbox_proxy_network: null
@@ -756,10 +744,13 @@ services:
       minio:
         condition: service_started
         required: true
-    environment:
-      ETCD_ENDPOINTS: ${ETCD_ENDPOINTS:-etcd:2379}
-      MINIO_ADDRESS: ${MINIO_ADDRESS:-minio:9000}
-      common.security.authorizationEnabled: ${MILVUS_AUTHORIZATION_ENABLED:-true}
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/vectorstores/milvus.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/infrastructure/milvus-standalone.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/infrastructure/milvus-standalone.defaults
+        required: true
     healthcheck:
       interval: 30s
       retries: 3
@@ -772,6 +763,7 @@ services:
       timeout: 20s
     image: milvusdb/milvus:v2.6.3
     networks:
+      default: null
       milvus: null
     ports:
       - mode: ingress
@@ -793,9 +785,13 @@ services:
   minio:
     command: minio server /minio_data --console-address ":9001"
     container_name: milvus-minio
-    environment:
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/vectorstores/milvus.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/infrastructure/minio.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/infrastructure/minio.defaults
+        required: true
     healthcheck:
       interval: 30s
       retries: 3
@@ -855,22 +851,14 @@ services:
       - sh
       - -c
       - "cp /docker-entrypoint-mount.sh /docker-entrypoint.sh && sed -i 's/\r$$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh && /docker-entrypoint.sh"
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/infrastructure/nginx.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/infrastructure/nginx.defaults
+        required: true
     environment:
-      CERTBOT_DOMAIN: ${CERTBOT_DOMAIN:-}
-      NGINX_CLIENT_MAX_BODY_SIZE: ${NGINX_CLIENT_MAX_BODY_SIZE:-100M}
-      NGINX_ENABLE_CERTBOT_CHALLENGE: ${NGINX_ENABLE_CERTBOT_CHALLENGE:-false}
-      NGINX_HTTPS_ENABLED: ${NGINX_HTTPS_ENABLED:-false}
-      NGINX_KEEPALIVE_TIMEOUT: ${NGINX_KEEPALIVE_TIMEOUT:-65}
       NGINX_PORT: ${NGINX_PORT:-80}
-      NGINX_PROXY_READ_TIMEOUT: ${NGINX_PROXY_READ_TIMEOUT:-3600s}
-      NGINX_PROXY_SEND_TIMEOUT: ${NGINX_PROXY_SEND_TIMEOUT:-3600s}
-      NGINX_SERVER_NAME: ${NGINX_SERVER_NAME:-_}
-      NGINX_SOCKET_IO_UPSTREAM: ${NGINX_SOCKET_IO_UPSTREAM:-api_websocket:5001}
-      NGINX_SSL_CERT_FILENAME: ${NGINX_SSL_CERT_FILENAME:-dify.crt}
-      NGINX_SSL_CERT_KEY_FILENAME: ${NGINX_SSL_CERT_KEY_FILENAME:-dify.key}
       NGINX_SSL_PORT: ${NGINX_SSL_PORT:-443}
-      NGINX_SSL_PROTOCOLS: ${NGINX_SSL_PROTOCOLS:-TLSv1.2 TLSv1.3}
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES:-auto}
     image: nginx:latest
     networks:
       default: null
@@ -928,22 +916,23 @@ services:
         type: bind
   oceanbase:
     container_name: oceanbase
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/vectorstores/oceanbase.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/vectorstores/oceanbase.defaults
+        required: true
     environment:
       LANG: C.UTF-8
       LC_ALL: C.UTF-8
       MODE: mini
-      OB_CLUSTER_NAME: ${OCEANBASE_CLUSTER_NAME:-difyai}
-      OB_MEMORY_LIMIT: ${OCEANBASE_MEMORY_LIMIT:-6G}
       OB_SERVER_IP: 127.0.0.1
-      OB_SYS_PASSWORD: ${OCEANBASE_VECTOR_PASSWORD:-difyai123456}
-      OB_TENANT_PASSWORD: ${OCEANBASE_VECTOR_PASSWORD:-difyai123456}
     healthcheck:
       interval: 10s
       retries: 30
       start_period: 30s
       test:
         - CMD-SHELL
-        - obclient -h127.0.0.1 -P2881 -uroot@test -p${OCEANBASE_VECTOR_PASSWORD:-difyai123456} -e "SELECT 1;"
+        - obclient -h127.0.0.1 -P2881 -uroot@test -p"$$OB_TENANT_PASSWORD" -e "SELECT 1;"
       timeout: 10s
     image: oceanbase/oceanbase-ce:4.3.5-lts
     networks:
@@ -970,11 +959,13 @@ services:
         target: /root/boot/init.d
         type: bind
   opengauss:
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/vectorstores/opengauss.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/vectorstores/opengauss.defaults
+        required: true
     environment:
-      GS_DB: ${OPENGAUSS_DATABASE:-dify}
-      GS_PASSWORD: ${OPENGAUSS_PASSWORD:-Dify@123}
       GS_PORT: ${OPENGAUSS_PORT:-6600}
-      GS_USERNAME: ${OPENGAUSS_USER:-postgres}
     healthcheck:
       interval: 10s
       retries: 10
@@ -999,13 +990,14 @@ services:
         type: bind
   opensearch:
     container_name: opensearch
-    environment:
-      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD:-Qazwsxedc!@#123}
-      OPENSEARCH_JAVA_OPTS: -Xms${OPENSEARCH_JAVA_OPTS_MIN:-512m} -Xmx${OPENSEARCH_JAVA_OPTS_MAX:-1024m}
-      bootstrap.memory_lock: ${OPENSEARCH_BOOTSTRAP_MEMORY_LOCK:-true}
-      discovery.type: ${OPENSEARCH_DISCOVERY_TYPE:-single-node}
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/vectorstores/opensearch.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/vectorstores/opensearch.defaults
+        required: true
     image: opensearchproject/opensearch:latest
     networks:
+      default: null
       opensearch-net: null
     profiles:
       - opensearch
@@ -1042,9 +1034,11 @@ services:
         target: /usr/share/opensearch-dashboards/config/opensearch_dashboards.yml
         type: bind
   oracle:
-    environment:
-      ORACLE_CHARACTERSET: ${ORACLE_CHARACTERSET:-AL32UTF8}
-      ORACLE_PWD: ${ORACLE_PWD:-Dify123456}
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/vectorstores/oracle.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/vectorstores/oracle.defaults
+        required: true
     image: container-registry.oracle.com/database/free:latest
     networks:
       default: null
@@ -1061,11 +1055,11 @@ services:
         target: /opt/oracle/scripts/startup
         type: bind
   pgvecto-rs:
-    environment:
-      PGDATA: ${PGVECTOR_PGDATA:-/var/lib/postgresql/data/pgdata}
-      PGUSER: ${PGVECTOR_PGUSER:-postgres}
-      POSTGRES_DB: ${PGVECTOR_POSTGRES_DB:-dify}
-      POSTGRES_PASSWORD: ${PGVECTOR_POSTGRES_PASSWORD:-difyai123456}
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/vectorstores/pgvecto-rs.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/vectorstores/pgvecto-rs.defaults
+        required: true
     healthcheck:
       interval: 1s
       retries: 30
@@ -1088,13 +1082,11 @@ services:
   pgvector:
     entrypoint:
       - /docker-entrypoint.sh
-    environment:
-      PG_BIGM: ${PGVECTOR_PG_BIGM:-false}
-      PG_BIGM_VERSION: ${PGVECTOR_PG_BIGM_VERSION:-1.2-20240606}
-      PGDATA: ${PGVECTOR_PGDATA:-/var/lib/postgresql/data/pgdata}
-      PGUSER: ${PGVECTOR_PGUSER:-postgres}
-      POSTGRES_DB: ${PGVECTOR_POSTGRES_DB:-dify}
-      POSTGRES_PASSWORD: ${PGVECTOR_POSTGRES_PASSWORD:-difyai123456}
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/vectorstores/pgvector.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/vectorstores/pgvector.defaults
+        required: true
     healthcheck:
       interval: 1s
       retries: 30
@@ -1134,54 +1126,8 @@ services:
         condition: service_healthy
         required: false
     environment:
-      ALIYUN_OSS_ACCESS_KEY_ID: ${PLUGIN_ALIYUN_OSS_ACCESS_KEY_ID:-}
-      ALIYUN_OSS_ACCESS_KEY_SECRET: ${PLUGIN_ALIYUN_OSS_ACCESS_KEY_SECRET:-}
-      ALIYUN_OSS_AUTH_VERSION: ${PLUGIN_ALIYUN_OSS_AUTH_VERSION:-v4}
-      ALIYUN_OSS_ENDPOINT: ${PLUGIN_ALIYUN_OSS_ENDPOINT:-}
-      ALIYUN_OSS_PATH: ${PLUGIN_ALIYUN_OSS_PATH:-}
-      ALIYUN_OSS_REGION: ${PLUGIN_ALIYUN_OSS_REGION:-}
-      AWS_ACCESS_KEY: ${PLUGIN_AWS_ACCESS_KEY:-}
-      AWS_REGION: ${PLUGIN_AWS_REGION:-}
-      AWS_SECRET_KEY: ${PLUGIN_AWS_SECRET_KEY:-}
-      AZURE_BLOB_STORAGE_CONNECTION_STRING: ${PLUGIN_AZURE_BLOB_STORAGE_CONNECTION_STRING:-}
-      AZURE_BLOB_STORAGE_CONTAINER_NAME: ${PLUGIN_AZURE_BLOB_STORAGE_CONTAINER_NAME:-}
-      DB_DATABASE: ${DB_PLUGIN_DATABASE:-dify_plugin}
-      DB_SSL_MODE: ${DB_SSL_MODE:-disable}
-      DIFY_INNER_API_KEY: ${PLUGIN_DIFY_INNER_API_KEY:-QaHbTe77CtuXmsfyhR7+vRjI/+XbV1AaFy691iy+kGDv2Jvy0/eAh8Y1}
-      DIFY_INNER_API_URL: ${PLUGIN_DIFY_INNER_API_URL:-http://api:5001}
-      FORCE_VERIFYING_SIGNATURE: ${FORCE_VERIFYING_SIGNATURE:-true}
-      MAX_PLUGIN_PACKAGE_SIZE: ${PLUGIN_MAX_PACKAGE_SIZE:-52428800}
-      PIP_MIRROR_URL: ${PIP_MIRROR_URL:-}
-      PLUGIN_INSTALLED_PATH: ${PLUGIN_INSTALLED_PATH:-plugin}
-      PLUGIN_MAX_EXECUTION_TIMEOUT: ${PLUGIN_MAX_EXECUTION_TIMEOUT:-600}
-      PLUGIN_MEDIA_CACHE_PATH: ${PLUGIN_MEDIA_CACHE_PATH:-assets}
-      PLUGIN_PACKAGE_CACHE_PATH: ${PLUGIN_PACKAGE_CACHE_PATH:-plugin_packages}
-      PLUGIN_REMOTE_INSTALLING_HOST: ${PLUGIN_DEBUGGING_HOST:-0.0.0.0}
       PLUGIN_REMOTE_INSTALLING_PORT: ${PLUGIN_DEBUGGING_PORT:-5003}
-      PLUGIN_STDIO_BUFFER_SIZE: ${PLUGIN_STDIO_BUFFER_SIZE:-1024}
-      PLUGIN_STDIO_MAX_BUFFER_SIZE: ${PLUGIN_STDIO_MAX_BUFFER_SIZE:-5242880}
-      PLUGIN_STORAGE_LOCAL_ROOT: ${PLUGIN_STORAGE_LOCAL_ROOT:-/app/storage}
-      PLUGIN_STORAGE_OSS_BUCKET: ${PLUGIN_STORAGE_OSS_BUCKET:-}
-      PLUGIN_STORAGE_TYPE: ${PLUGIN_STORAGE_TYPE:-local}
-      PLUGIN_WORKING_PATH: ${PLUGIN_WORKING_PATH:-/app/storage/cwd}
-      PPROF_ENABLED: ${PLUGIN_PPROF_ENABLED:-false}
-      PYTHON_ENV_INIT_TIMEOUT: ${PLUGIN_PYTHON_ENV_INIT_TIMEOUT:-120}
-      S3_ENDPOINT: ${PLUGIN_S3_ENDPOINT:-}
-      S3_USE_AWS: ${PLUGIN_S3_USE_AWS:-false}
-      S3_USE_AWS_MANAGED_IAM: ${PLUGIN_S3_USE_AWS_MANAGED_IAM:-false}
-      S3_USE_PATH_STYLE: ${PLUGIN_S3_USE_PATH_STYLE:-false}
-      SENTRY_DSN: ${PLUGIN_SENTRY_DSN:-}
-      SENTRY_ENABLED: ${PLUGIN_SENTRY_ENABLED:-false}
-      SERVER_KEY: ${PLUGIN_DAEMON_KEY:-lYkiYYT6owG+71oLerGzA7GXCgOT++6ovaezWAjpCjf+Sjc3ZtU+qUEi}
-      SERVER_PORT: ${PLUGIN_DAEMON_PORT:-5002}
-      TENCENT_COS_REGION: ${PLUGIN_TENCENT_COS_REGION:-}
-      TENCENT_COS_SECRET_ID: ${PLUGIN_TENCENT_COS_SECRET_ID:-}
-      TENCENT_COS_SECRET_KEY: ${PLUGIN_TENCENT_COS_SECRET_KEY:-}
-      VOLCENGINE_TOS_ACCESS_KEY: ${PLUGIN_VOLCENGINE_TOS_ACCESS_KEY:-}
-      VOLCENGINE_TOS_ENDPOINT: ${PLUGIN_VOLCENGINE_TOS_ENDPOINT:-}
-      VOLCENGINE_TOS_REGION: ${PLUGIN_VOLCENGINE_TOS_REGION:-}
-      VOLCENGINE_TOS_SECRET_KEY: ${PLUGIN_VOLCENGINE_TOS_SECRET_KEY:-}
-    image: ${JCR_REGISTRY}/docker/langgenius/dify-plugin-daemon:0.6.11-local@sha256:9a3eaf522f20dcf8686b0a8c0db3bf9f3b5798a772f9d0b7c90cd7fd6a8c71b7
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-plugin-daemon:0.6.14-local@sha256:17ee86306a35c2c7e5910016f72e441c0252f0416bb9a845862088e9f8efa873
     labels:
       - traefik.enable=true
       - traefik.docker.network=reverse-proxy
@@ -1203,14 +1149,21 @@ services:
         target: /app/storage
         type: bind
   qdrant:
-    environment:
-      QDRANT_API_KEY: ${QDRANT_API_KEY:-difyai123456}
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/vectorstores/qdrant.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/vectorstores/qdrant.defaults
+        required: true
     image: langgenius/qdrant:v1.8.3
     networks:
       default: null
     profiles:
       - qdrant
     restart: always
+    ulimits:
+      nofile:
+        hard: ${QDRANT_NOFILE_HARD:-524288}
+        soft: ${QDRANT_NOFILE_SOFT:-524288}
     volumes:
       - bind:
           create_host_path: true
@@ -1218,14 +1171,18 @@ services:
         target: /qdrant/storage
         type: bind
   redis:
-    command: redis-server --requirepass ${REDIS_PASSWORD:-difyai123456}
+    command:
+      - sh
+      - -c
+      - exec docker-entrypoint.sh redis-server --requirepass "$$REDIS_PASSWORD"
     environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-difyai123456}
       REDISCLI_AUTH: ${REDIS_PASSWORD:-difyai123456}
     healthcheck:
       test:
         - CMD-SHELL
-        - redis-cli -a ${REDIS_PASSWORD:-difyai123456} ping | grep -q PONG
-    image: ${JCR_REGISTRY}/docker/redis:6-alpine
+        - redis-cli ping | grep -q PONG
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/redis:6-alpine
     networks:
       default: null
     restart: always
@@ -1235,22 +1192,11 @@ services:
         type: volume
         volume: {}
   sandbox:
-    environment:
-      API_KEY: ${SANDBOX_API_KEY:-dify-sandbox}
-      ENABLE_NETWORK: ${SANDBOX_ENABLE_NETWORK:-true}
-      GIN_MODE: ${SANDBOX_GIN_MODE:-release}
-      HTTP_PROXY: ${SANDBOX_HTTP_PROXY:-http://ssrf_proxy:3128}
-      HTTPS_PROXY: ${SANDBOX_HTTPS_PROXY:-http://ssrf_proxy:3128}
-      PIP_MIRROR_URL: ${PIP_MIRROR_URL:-}
-      SANDBOX_PORT: ${SANDBOX_PORT:-8194}
-      WORKER_TIMEOUT: ${SANDBOX_WORKER_TIMEOUT:-15}
     healthcheck:
       test:
-        - CMD
-        - curl
-        - -f
-        - http://localhost:8194/health
-    image: ${JCR_REGISTRY}/docker/langgenius/dify-sandbox:0.2.15
+        - CMD-SHELL
+        - curl -f "http://localhost:$$SANDBOX_PORT/health"
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-sandbox:0.2.15
     networks:
       ssrf_proxy_network: null
     restart: always
@@ -1267,16 +1213,19 @@ services:
         type: bind
   seekdb:
     container_name: seekdb
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/vectorstores/seekdb.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/vectorstores/seekdb.defaults
+        required: true
     environment:
-      MEMORY_LIMIT: ${SEEKDB_MEMORY_LIMIT:-2G}
       REPORTER: dify-ai-seekdb
-      ROOT_PASSWORD: ${OCEANBASE_VECTOR_PASSWORD:-difyai123456}
     healthcheck:
       interval: 5s
       retries: 60
       test:
         - CMD-SHELL
-        - mysql -h127.0.0.1 -P2881 -uroot -p${OCEANBASE_VECTOR_PASSWORD:-difyai123456} -e "SELECT 1;"
+        - mysql -h127.0.0.1 -P2881 -uroot -p"$$ROOT_PASSWORD" -e "SELECT 1;"
       timeout: 5s
     image: oceanbase/seekdb:latest
     networks:
@@ -1302,7 +1251,7 @@ services:
       HTTP_PORT: ${SSRF_HTTP_PORT:-3128}
       SSRF_PROXY_ALLOW_PRIVATE_DOMAINS: ${SSRF_PROXY_ALLOW_PRIVATE_DOMAINS:-}
       SSRF_PROXY_ALLOW_PRIVATE_IPS: ${SSRF_PROXY_ALLOW_PRIVATE_IPS:-}
-    image: ${JCR_REGISTRY}/docker/ubuntu/squid:latest
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/ubuntu/squid:latest
     networks:
       default: null
       ssrf_proxy_network: null
@@ -1382,22 +1331,12 @@ services:
         target: /home/vastbase/backup_log
         type: bind
   weaviate:
-    environment:
-      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: ${WEAVIATE_AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED:-false}
-      AUTHENTICATION_APIKEY_ALLOWED_KEYS: ${WEAVIATE_AUTHENTICATION_APIKEY_ALLOWED_KEYS:-WVF5YThaHlkYwhGUSmCRgsX3tD5ngdN8pkih}
-      AUTHENTICATION_APIKEY_ENABLED: ${WEAVIATE_AUTHENTICATION_APIKEY_ENABLED:-true}
-      AUTHENTICATION_APIKEY_USERS: ${WEAVIATE_AUTHENTICATION_APIKEY_USERS:-hello@dify.ai}
-      AUTHORIZATION_ADMINLIST_ENABLED: ${WEAVIATE_AUTHORIZATION_ADMINLIST_ENABLED:-true}
-      AUTHORIZATION_ADMINLIST_USERS: ${WEAVIATE_AUTHORIZATION_ADMINLIST_USERS:-hello@dify.ai}
-      CLUSTER_HOSTNAME: ${WEAVIATE_CLUSTER_HOSTNAME:-node1}
-      DEFAULT_VECTORIZER_MODULE: ${WEAVIATE_DEFAULT_VECTORIZER_MODULE:-none}
-      DISABLE_TELEMETRY: ${WEAVIATE_DISABLE_TELEMETRY:-false}
-      ENABLE_TOKENIZER_GSE: ${WEAVIATE_ENABLE_TOKENIZER_GSE:-false}
-      ENABLE_TOKENIZER_KAGOME_JA: ${WEAVIATE_ENABLE_TOKENIZER_KAGOME_JA:-false}
-      ENABLE_TOKENIZER_KAGOME_KR: ${WEAVIATE_ENABLE_TOKENIZER_KAGOME_KR:-false}
-      PERSISTENCE_DATA_PATH: ${WEAVIATE_PERSISTENCE_DATA_PATH:-/var/lib/weaviate}
-      QUERY_DEFAULTS_LIMIT: ${WEAVIATE_QUERY_DEFAULTS_LIMIT:-25}
-    image: ${JCR_REGISTRY}/docker/semitechnologies/weaviate:1.39.13
+    env_file:
+      - path: /home/runner/work/compose/compose/envs/vectorstores/weaviate.env
+        required: false
+      - path: /home/runner/work/compose/compose/envs/vectorstores/weaviate.defaults
+        required: true
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/semitechnologies/weaviate:1.39.13
     networks:
       default: null
     profiles:
@@ -1409,36 +1348,9 @@ services:
         type: volume
         volume: {}
   web:
-    environment:
-      ALLOW_EMBED: ${ALLOW_EMBED:-false}
-      ALLOW_UNSAFE_DATA_SCHEME: ${ALLOW_UNSAFE_DATA_SCHEME:-false}
-      AMPLITUDE_API_KEY: ${AMPLITUDE_API_KEY:-}
-      APP_API_URL: ${APP_API_URL:-}
-      CONSOLE_API_URL: ${CONSOLE_API_URL:-}
-      CSP_WHITELIST: ${CSP_WHITELIST:-}
-      ENABLE_WEBSITE_FIRECRAWL: ${ENABLE_WEBSITE_FIRECRAWL:-true}
-      ENABLE_WEBSITE_JINAREADER: ${ENABLE_WEBSITE_JINAREADER:-true}
-      ENABLE_WEBSITE_WATERCRAWL: ${ENABLE_WEBSITE_WATERCRAWL:-true}
-      EXPERIMENTAL_ENABLE_VINEXT: ${EXPERIMENTAL_ENABLE_VINEXT:-false}
-      INDEXING_MAX_SEGMENTATION_TOKENS_LENGTH: ${INDEXING_MAX_SEGMENTATION_TOKENS_LENGTH:-4000}
-      LOOP_NODE_MAX_COUNT: ${LOOP_NODE_MAX_COUNT:-100}
-      MARKETPLACE_API_URL: ${MARKETPLACE_API_URL:-https://marketplace.dify.ai}
-      MARKETPLACE_URL: ${MARKETPLACE_URL:-https://marketplace.dify.ai}
-      MAX_ITERATIONS_NUM: ${MAX_ITERATIONS_NUM:-99}
-      MAX_PARALLEL_LIMIT: ${MAX_PARALLEL_LIMIT:-10}
-      MAX_TOOLS_NUM: ${MAX_TOOLS_NUM:-10}
-      MAX_TREE_DEPTH: ${MAX_TREE_DEPTH:-50}
-      NEXT_PUBLIC_COOKIE_DOMAIN: ${NEXT_PUBLIC_COOKIE_DOMAIN:-}
-      NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL:-ws://localhost}
-      NEXT_TELEMETRY_DISABLED: ${NEXT_TELEMETRY_DISABLED:-0}
-      SENTRY_DSN: ${WEB_SENTRY_DSN:-}
-      SERVER_CONSOLE_API_URL: ${SERVER_CONSOLE_API_URL:-http://api:5001}
-      TEXT_GENERATION_TIMEOUT_MS: ${TEXT_GENERATION_TIMEOUT_MS:-60000}
-      TOP_K_MAX_VALUE: ${TOP_K_MAX_VALUE:-10}
-      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
     expose:
       - "3000"
-    image: ${JCR_REGISTRY}/docker/langgenius/dify-web:1.18.0@sha256:e55a6bf1addf109c3655567663f906624f0980061efed864e0f07d23c71fa385
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-web:1.19.0@sha256:f5f1ad000d6a268ae6b29b84c5095069fbd5994cbe43f937a3d32caa00038b4c
     labels:
       - traefik.enable=true
       - traefik.docker.network=reverse-proxy
@@ -1476,14 +1388,7 @@ services:
         condition: service_healthy
         required: false
     environment:
-      AGENT_BACKEND_API_TOKEN: ${DIFY_AGENT_API_TOKEN:-dify-agent-run-token-for-dev-only}
-      AGENT_BACKEND_BASE_URL: ${AGENT_BACKEND_BASE_URL:-http://agent_backend:5050}
-      INNER_API_KEY_FOR_PLUGIN: ${PLUGIN_DIFY_INNER_API_KEY:-QaHbTe77CtuXmsfyhR7+vRjI/+XbV1AaFy691iy+kGDv2Jvy0/eAh8Y1}
       MODE: worker
-      PLUGIN_MAX_PACKAGE_SIZE: ${PLUGIN_MAX_PACKAGE_SIZE:-52428800}
-      SENTRY_DSN: ${API_SENTRY_DSN:-}
-      SENTRY_PROFILES_SAMPLE_RATE: ${API_SENTRY_PROFILES_SAMPLE_RATE:-1.0}
-      SENTRY_TRACES_SAMPLE_RATE: ${API_SENTRY_TRACES_SAMPLE_RATE:-1.0}
     healthcheck:
       disable: ${COMPOSE_WORKER_HEALTHCHECK_DISABLED:-true}
       interval: ${COMPOSE_WORKER_HEALTHCHECK_INTERVAL:-30s}
@@ -1493,7 +1398,7 @@ services:
         - CMD-SHELL
         - celery -A celery_healthcheck.celery inspect ping
       timeout: ${COMPOSE_WORKER_HEALTHCHECK_TIMEOUT:-30s}
-    image: ${JCR_REGISTRY}/docker/langgenius/dify-api:1.18.0@sha256:0120970fb4ea59aa328d63b7dda635cccc071efb8aae470cd07115a026dbffd3
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api:1.19.0@sha256:0d67842aedcb9b5884f75b88c4a5dd812e637916bff1ca892831f7ace2f3204f
     networks:
       default: null
       ssrf_proxy_network: null
@@ -1534,7 +1439,7 @@ services:
         - CMD-SHELL
         - celery -A celery_healthcheck.celery inspect ping
       timeout: ${COMPOSE_WORKER_HEALTHCHECK_TIMEOUT:-30s}
-    image: ${JCR_REGISTRY}/docker/langgenius/dify-api:1.18.0@sha256:0120970fb4ea59aa328d63b7dda635cccc071efb8aae470cd07115a026dbffd3
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api:1.19.0@sha256:0d67842aedcb9b5884f75b88c4a5dd812e637916bff1ca892831f7ace2f3204f
     networks:
       default: null
       ssrf_proxy_network: null
@@ -1564,10 +1469,7 @@ services:
       CELERY_WORKER_POOL: prefork
       CELERY_WORKER_QUEUES: knowledge_fs_upgrade
       MODE: worker
-      SENTRY_DSN: ${API_SENTRY_DSN:-}
-      SENTRY_PROFILES_SAMPLE_RATE: ${API_SENTRY_PROFILES_SAMPLE_RATE:-1.0}
-      SENTRY_TRACES_SAMPLE_RATE: ${API_SENTRY_TRACES_SAMPLE_RATE:-1.0}
-    image: ${JCR_REGISTRY}/docker/langgenius/dify-api:1.18.0@sha256:0120970fb4ea59aa328d63b7dda635cccc071efb8aae470cd07115a026dbffd3
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api:1.19.0@sha256:0d67842aedcb9b5884f75b88c4a5dd812e637916bff1ca892831f7ace2f3204f
     networks:
       default: null
       ssrf_proxy_network: null
@@ -1604,7 +1506,7 @@ x-knowledge-fs-celery-worker:
   env_file:
     - path: ./envs/core-services/shared.env
       required: false
-    - path: ./envs/core-services/worker.env
+    - path: ./envs/core-services/api-worker.env
       required: false
     - path: ./envs/security.env
       required: false
@@ -1618,7 +1520,11 @@ x-knowledge-fs-celery-worker:
       required: false
     - path: ./envs/core-services/knowledge-fs-worker.env
       required: false
+    - path: ./envs/core-services/worker.env
+      required: false
     - ./.env
+    - ./envs/core-services/api-worker.defaults
+    - ./envs/core-services/worker.defaults
   environment:
     CELERY_PREFETCH_MULTIPLIER: "1"
     CELERY_WORKER_POOL: prefork
@@ -1629,18 +1535,18 @@ x-knowledge-fs-celery-worker:
     MAX_TASKS_PER_CHILD: ${KNOWLEDGE_FS_WORKER_MAX_TASKS_PER_CHILD:-1000}
     MIGRATION_ENABLED: "false"
     MODE: worker
-  image: ${KNOWLEDGE_FS_WORKER_IMAGE:-langgenius/dify-api:1.18.0}
+  image: ${KNOWLEDGE_FS_WORKER_IMAGE:-langgenius/dify-api:1.19.0}
   networks:
     - default
   profiles:
     - knowledge-fs-celery
   restart: always
   stop_grace_period: 125m
-x-shared-api-worker-config:
+x-shared-api-config:
   env_file:
     - path: ./envs/core-services/shared.env
       required: false
-    - path: ./envs/core-services/api.env
+    - path: ./envs/core-services/api-worker.env
       required: false
     - path: ./envs/security.env
       required: false
@@ -1696,7 +1602,13 @@ x-shared-api-worker-config:
       required: false
     - path: ./envs/infrastructure/milvus-standalone.env
       required: false
+    - path: ./envs/core-services/api.env
+      required: false
     - ./.env
+    - path: ./envs/vectorstores/${VECTOR_STORE:-weaviate}.defaults
+      required: false
+    - ./envs/core-services/api-worker.defaults
+    - ./envs/core-services/api.defaults
   networks:
     - ssrf_proxy_network
     - default
@@ -1705,7 +1617,7 @@ x-shared-worker-beat-config:
   env_file:
     - path: ./envs/core-services/shared.env
       required: false
-    - path: ./envs/core-services/worker-beat.env
+    - path: ./envs/core-services/api-worker.env
       required: false
     - path: ./envs/security.env
       required: false
@@ -1761,7 +1673,13 @@ x-shared-worker-beat-config:
       required: false
     - path: ./envs/infrastructure/milvus-standalone.env
       required: false
+    - path: ./envs/core-services/worker-beat.env
+      required: false
     - ./.env
+    - path: ./envs/vectorstores/${VECTOR_STORE:-weaviate}.defaults
+      required: false
+    - ./envs/core-services/api-worker.defaults
+    - ./envs/core-services/worker-beat.defaults
   networks:
     - ssrf_proxy_network
     - default
@@ -1770,7 +1688,7 @@ x-shared-worker-config:
   env_file:
     - path: ./envs/core-services/shared.env
       required: false
-    - path: ./envs/core-services/worker.env
+    - path: ./envs/core-services/api-worker.env
       required: false
     - path: ./envs/security.env
       required: false
@@ -1826,7 +1744,13 @@ x-shared-worker-config:
       required: false
     - path: ./envs/infrastructure/milvus-standalone.env
       required: false
+    - path: ./envs/core-services/worker.env
+      required: false
     - ./.env
+    - path: ./envs/vectorstores/${VECTOR_STORE:-weaviate}.defaults
+      required: false
+    - ./envs/core-services/api-worker.defaults
+    - ./envs/core-services/worker.defaults
   networks:
     - ssrf_proxy_network
     - default
