@@ -153,11 +153,16 @@ jobs:
           python3 - <<'PYEOF'
           import yaml, sys
           d = yaml.safe_load(open('docker-compose.merged.tmp.yaml'))
-          offenders = [k for k, v in d.get('services', {}).items() if v.get('env_file')]
+          # 只约束默认启动的服务：profile 服务（chroma/qdrant/pgvector 等向量库、
+          # mysql/oracle 等备用库、minio/etcd 等基础设施）默认不启动，它们的
+          # env_file 指向上游 docker/envs/ 分层配置，未启用时无影响；上游 1.19.0
+          # 给这些服务补了 env_file，不该因此拒绝同步。
+          offenders = [k for k, v in d.get('services', {}).items()
+                       if v.get('env_file') and not v.get('profiles')]
           if offenders:
-              print(f'::error::services still carrying env_file: {offenders}')
+              print(f'::error::default-startup services still carrying env_file: {offenders}')
               sys.exit(1)
-          print('no service-level env_file (anchor echo is harmless)')
+          print('no env_file on default-startup services (profile services exempt)')
           port_offenders = [k for k, v in d.get('services', {}).items()
                             if v.get('ports') and not v.get('profiles')]
           if port_offenders:
