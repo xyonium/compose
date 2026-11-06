@@ -22,7 +22,7 @@
 | 变量 | 说明 |
 |---|---|
 | `N8N_DOMAIN` | 对外域名，如 `n8n.example.com`（不带 scheme） |
-| `JCR_REGISTRY` | 私服 mirror 主机名（不带前导/后缀 `/`） |
+| `JCR_REGISTRY` | 私服 mirror 主机名（不带前导/后缀 `/`）。**可不设**：不设/空串时镜像回落 docker.io 官方源 |
 | `POSTGRES_USER` | pg 超级用户 |
 | `POSTGRES_PASSWORD` | pg 超级用户密码 |
 | `POSTGRES_DB` | 数据库名，惯例 `n8n` |

@@ -16,7 +16,7 @@ name: n8n
 
 services:
   n8n:
-    image: ${JCR_REGISTRY}/docker/n8nio/n8n:latest
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/n8nio/n8n:latest
     # 不暴露宿主端口（清掉上游的 5678:5678 映射），外部访问走 traefik
     ports: !reset null
     networks:
@@ -38,19 +38,19 @@ services:
       - "traefik.http.routers.n8nhttp.middlewares=http2https"
 
   n8n-worker:
-    image: ${JCR_REGISTRY}/docker/n8nio/n8n:latest
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/n8nio/n8n:latest
 
   n8n-runner:
-    image: ${JCR_REGISTRY}/docker/n8nio/runners:latest
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/n8nio/runners:latest
 
   n8n-worker-runner:
-    image: ${JCR_REGISTRY}/docker/n8nio/runners:latest
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/n8nio/runners:latest
 
   postgres:
-    image: ${JCR_REGISTRY}/docker/postgres:16-alpine
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/postgres:16-alpine
 
   redis:
-    image: ${JCR_REGISTRY}/docker/redis:7-alpine
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/redis:7-alpine
 
 networks:
   reverse-proxy:
