@@ -205,7 +205,7 @@ jobs:
               if not digest.startswith('sha256:'):
                   print(f'::error::empty digest for {repo}: {r.stdout!r} {r.stderr!r}')
                   sys.exit(1)
-              lit = '${JCR_REGISTRY}/docker/' + repo
+              lit = '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/' + repo
               # 干掉该行已有 tag/digest 后缀，统一写成 image@digest
               import re
               pattern = re.escape(lit) + r'(:[A-Za-z0-9_.-]+)?(@sha256:[0-9a-f]{64})?(?=\s*$)'
@@ -237,7 +237,7 @@ jobs:
             "container_name: netbird-proxy" \
             "container_name: netbird-relay" \
             "management.ProxyService/" \
-            '${JCR_REGISTRY}/docker/netbirdio' \
+            '${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/netbirdio' \
             '${NETBIRD_CERT_DIR}' \
             "traefik.enable" \
             "http2https" \
@@ -286,7 +286,7 @@ jobs:
           assert set(d.get('services', {})) == {'dashboard','netbird-server','relay','proxy'}, \
               f"services mismatch: {list(d.get('services', {}))}"
           t = open('docker-compose.yaml').read()
-          missing = [v for v in ('${NETBIRD_DOMAIN}','${JCR_REGISTRY}','${NETBIRD_CERT_DIR}',
+          missing = [v for v in ('${NETBIRD_DOMAIN}','${JCR_REGISTRY','${NETBIRD_CERT_DIR}',
                                  '${NB_PROXY_TOKEN}','${NB_RELAY_AUTH_SECRET}') if v not in t]
           assert not missing, f"missing env templates: {missing}"
           assert t.count('@sha256:') == 4, "expected 4 pinned images"
