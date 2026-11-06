@@ -30,7 +30,7 @@ services:
       - N8N_RUNNERS_AUTH_TOKEN=${RUNNERS_AUTH_TOKEN}
       - N8N_RUNNERS_BROKER_LISTEN_ADDRESS=0.0.0.0
       - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true
-    image: ${JCR_REGISTRY}/docker/n8nio/n8n@sha256:d02752c6ab446ae9db8deec2f9cc887c378f77cdcad31650814df936b7386dfb
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/n8nio/n8n@sha256:8602f5dfacbe2c931eeafd010de0e68182310e9f309921e780ab69182e92b3ae
     labels:
       - traefik.enable=true
       - traefik.docker.network=reverse-proxy
@@ -57,7 +57,7 @@ services:
     environment:
       - N8N_RUNNERS_AUTH_TOKEN=${RUNNERS_AUTH_TOKEN}
       - N8N_RUNNERS_TASK_BROKER_URI=http://n8n:5679
-    image: ${JCR_REGISTRY}/docker/n8nio/runners@sha256:255e69ed23d8b3866e593f6e105e7e12cafc81c4d1966a8f8702115af1032461
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/n8nio/runners@sha256:b1fe87a59b712a03e5a4fbb46a18ea5ca9487add602f8749941a69f4ab322612
     networks:
       default: null
     restart: always
@@ -83,7 +83,7 @@ services:
       - N8N_RUNNERS_AUTH_TOKEN=${RUNNERS_AUTH_TOKEN}
       - N8N_RUNNERS_BROKER_LISTEN_ADDRESS=0.0.0.0
       - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true
-    image: ${JCR_REGISTRY}/docker/n8nio/n8n@sha256:d02752c6ab446ae9db8deec2f9cc887c378f77cdcad31650814df936b7386dfb
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/n8nio/n8n@sha256:8602f5dfacbe2c931eeafd010de0e68182310e9f309921e780ab69182e92b3ae
     networks:
       default: null
     restart: always
@@ -100,7 +100,7 @@ services:
     environment:
       - N8N_RUNNERS_AUTH_TOKEN=${RUNNERS_AUTH_TOKEN}
       - N8N_RUNNERS_TASK_BROKER_URI=http://n8n-worker:5679
-    image: ${JCR_REGISTRY}/docker/n8nio/runners@sha256:255e69ed23d8b3866e593f6e105e7e12cafc81c4d1966a8f8702115af1032461
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/n8nio/runners@sha256:b1fe87a59b712a03e5a4fbb46a18ea5ca9487add602f8749941a69f4ab322612
     networks:
       default: null
     restart: always
@@ -119,7 +119,7 @@ services:
         - CMD-SHELL
         - pg_isready -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB}
       timeout: 5s
-    image: ${JCR_REGISTRY}/docker/postgres:16-alpine
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/postgres:16-alpine
     networks:
       default: null
     restart: always
@@ -142,7 +142,7 @@ services:
         - redis-cli
         - ping
       timeout: 5s
-    image: ${JCR_REGISTRY}/docker/redis:7-alpine
+    image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/redis:7-alpine
     networks:
       default: null
     restart: always
