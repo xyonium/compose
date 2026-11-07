@@ -50,6 +50,47 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/langgenius/dify/main/docker/.env.example \
             -o .env.example
 
+      - name: Sync upstream runtime files (ssrf_proxy configs + sandbox conf)
+        run: |
+          set -euo pipefail
+          # dify 的 ssrf_proxy / agent_ssrf_proxy / sandbox 用仓库内文件做 bind，
+          # 部署主机必须在项目目录里放好这些文件，否则容器起不来。
+          # 这里把上游 docker/ssrf_proxy/ 与 docker/volumes/sandbox/conf/ 一起同步进分支，
+          # 让分支自足（部署主机把本分支 checkout 到项目目录即可）。
+          # 用 sparse clone 而非逐文件 curl：上游新增模板时自动跟上。
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          git clone --quiet --filter=blob:none --depth 1 --sparse \
+            https://github.com/langgenius/dify "$work/dify"
+          ( cd "$work/dify" && git sparse-checkout set docker/ssrf_proxy docker/volumes/sandbox )
+
+          rm -rf ssrf_proxy volumes
+          mkdir -p ssrf_proxy volumes/sandbox
+          # 只取运行时真正被 bind 的 5 个文件（跳过上游自带的 test_*.sh）
+          for f in squid.conf.template squid-common.conf.template squid-agent.conf.template \
+                   docker-entrypoint.sh docker-agent-entrypoint.sh; do
+            cp "$work/dify/docker/ssrf_proxy/$f" "ssrf_proxy/$f"
+          done
+          cp -r "$work/dify/docker/volumes/sandbox/conf" volumes/sandbox/conf
+          # dependencies 目录上游不存放内容（sandbox 启动时自填），留占位保证 bind 源存在
+          mkdir -p volumes/sandbox/dependencies
+          touch volumes/sandbox/dependencies/.gitkeep
+
+          # 自检：compose 里 bind 的源文件必须都在分支里
+          python3 - <<'PYEOF'
+          import re, sys, os
+          t = open('docker-compose.upstream.yaml').read()
+          srcs = set(re.findall(r'-\s+\./(\S+?):/', t))
+          missing = [s for s in sorted(srcs)
+                     if s.startswith(('ssrf_proxy/', 'volumes/')) and not os.path.exists(s)]
+          if missing:
+              print('::error::upstream binds files that were not synced into the branch:')
+              for m in missing:
+                  print('::error::  ' + m)
+              sys.exit(1)
+          print(f'ssrf_proxy/sandbox 运行时文件已同步（{len([s for s in srcs if s.startswith(("ssrf_proxy/","volumes/"))])} 个 bind 源全部存在）')
+          PYEOF
+
       - name: Version drift check (overlay tags must match upstream)
         run: |
           set -euo pipefail
@@ -292,7 +333,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docker-compose.upstream.yaml .env.example docker-compose.yaml
+          git add docker-compose.upstream.yaml .env.example docker-compose.yaml ssrf_proxy volumes
           if git diff --cached --quiet; then
             echo "Upstream unchanged, nothing to do."
           else
