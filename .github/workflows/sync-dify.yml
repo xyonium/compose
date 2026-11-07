@@ -71,11 +71,33 @@ jobs:
       - name: Merge, pin image digests and validate
         run: |
           set -euo pipefail
-          # --no-interpolate 保留 ${VAR} 模板，由部署平台的项目 env 注入
+          # --no-interpolate 保留 ${VAR} 模板，由部署平台的项目 env 注入。
+          # --no-path-resolution：禁止把相对 bind 路径解析成 runner 上的绝对路径
+          #（否则产物里全是 /home/runner/work/compose/compose/...，部署到目标主机必然起不来）。
+          # 探针探测而非硬编码：老版本 compose 没这个 flag 时退回后处理。
+          PATHFLAG=""
+          if docker compose config --help 2>&1 | grep -q -- '--no-path-resolution'; then
+            PATHFLAG="--no-path-resolution"
+            echo "compose 支持 --no-path-resolution，启用"
+          else
+            echo "::warning::compose 不支持 --no-path-resolution，退回后处理剥离 runner 前缀"
+          fi
           docker compose -f docker-compose.upstream.yaml -f docker-compose.portainer.yaml \
-            config --no-interpolate --quiet
+            config --no-interpolate $PATHFLAG --quiet
           docker compose -f docker-compose.upstream.yaml -f docker-compose.portainer.yaml \
-            config --no-interpolate > docker-compose.merged.tmp.yaml
+            config --no-interpolate $PATHFLAG > docker-compose.merged.tmp.yaml
+
+          # 兜底：产物里绝不允许出现 runner 工作目录的绝对路径
+          python3 - <<'PYEOF'
+          import re, sys
+          t = open('docker-compose.merged.tmp.yaml').read()
+          t = re.sub(r'/home/runner/work/[^/]+/[^/]+/', './', t)
+          open('docker-compose.merged.tmp.yaml', 'w').write(t)
+          if '/home/runner/' in t:
+              print('::error::merged config still contains runner absolute path')
+              sys.exit(1)
+          print('bind 路径已保持相对形式（无 runner 绝对路径）')
+          PYEOF
 
           # 钉三个主程序镜像：dify-api（api/api_websocket/worker/worker_beat/
           # worker_knowledge_fs_upgrade 共 5 处）、dify-web（1 处）、dify-plugin-daemon（1 处）。
@@ -223,6 +245,30 @@ jobs:
           base = open('docker-compose.upstream.yaml').read().count('@sha256:')
           assert t.count('@sha256:') == 7 + base, \
               f"expected {7 + base} pinned image refs (7 ours + {base} upstream), got {t.count('@sha256:')}"
+          assert '/home/runner' not in t, \
+              "merged config bakes runner absolute path — --no-path-resolution broken"
+          # 默认启动服务的宿主机 bind（./ 开头）必须为空或已知白名单：
+          # dify 的 sandbox/ssrf_proxy 依赖仓库内配置文件，这几项是部署主机必须
+          # 物化的前提，登记在这里以便上游新增 bind 时大声失败。
+          ALLOWED_HOST_BINDS = {
+              ('sandbox', '/dependencies'),
+              ('sandbox', '/conf'),
+              ('ssrf_proxy', '/etc/squid/squid.conf'),
+              ('agent_ssrf_proxy', '/etc/squid/squid.conf'),
+          }
+          unregistered = []
+          for name, svc in d.get('services', {}).items():
+              if svc.get('profiles'):
+                  continue
+              for v in svc.get('volumes') or []:
+                  src = v.get('source') if isinstance(v, dict) else str(v).split(':')[0]
+                  if not src or not str(src).startswith('.'):
+                      continue
+                  tgt = v.get('target') if isinstance(v, dict) else str(v).split(':')[1]
+                  if (name, tgt) not in ALLOWED_HOST_BINDS:
+                      unregistered.append((name, src, tgt))
+          assert not unregistered, \
+              f"default-startup services gained unregistered host bind: {unregistered}"
           print('merged structure OK: yaml parses, core services present, env templates intact, 7 pinned refs')
           PYEOF
 
