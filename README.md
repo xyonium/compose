@@ -38,6 +38,26 @@
 迁移后旧值视为已泄露，**必须全部轮换**（`SECRET_KEY` 轮换后所有登录态失效；
 `INIT_PASSWORD` 只对初始化生效，已有管理员账号的在界面里改密码即可）。
 
+## 部署前置：项目目录必须放好运行时文件
+
+dify 的 `ssrf_proxy` / `agent_ssrf_proxy` / `sandbox` 用**仓库内文件做 bind**
+（不是 named volume），所以部署主机的项目目录必须真的存在这些文件：
+
+```
+ssrf_proxy/squid.conf.template
+ssrf_proxy/squid-common.conf.template
+ssrf_proxy/squid-agent.conf.template
+ssrf_proxy/docker-entrypoint.sh
+ssrf_proxy/docker-agent-entrypoint.sh
+volumes/sandbox/conf/config.yaml
+volumes/sandbox/dependencies/        （空目录占位，sandbox 启动时自填）
+```
+
+这些文件由 `sync-dify.yml` 从上游 `docker/ssrf_proxy/` 与 `docker/volumes/sandbox/`
+同步进本分支（bot 维护，勿手改）。**最简单可靠的做法是把本分支 checkout 到项目目录**
+（`git clone -b dify`），让 compose 文件与这些 bind 源同处一个目录树；只把
+`docker-compose.yaml` 单独拷出来的话，squid 与 sandbox 会因缺文件起不来。
+
 ## 迁移注意事项（自旧 Portainer stack 迁入）
 
 - 本分支固定 `name: dify`，卷名恒为 `dify_app` / `dify_db` / `dify_redis` /
