@@ -97,6 +97,15 @@ firecrawl 分支迁移时的增补教训（2026-10-21）：
     成功。跑完一定要抽 dist 验关键字符串（`Keyless sessions get no Alexandria`
     `firecrawl_find_tools` `research_passages describe` 等）；漂移就 revert 该
     latest commit、单独开案改 patch 并重 A/B 验。
+13. **`docker compose config` 会把相对 bind 解析成 runner 的绝对路径**（dify
+    2026-11-07 实证：产物里 57 处 `/home/runner/work/compose/compose/...`，部署到
+    目标主机路径不存在必然起不来，而 sync 本身是绿的——**绿不等于可部署**）。
+    凡是上游 compose 里有 `./xxx:...` 相对 bind 的分支（dify 尤其多），合并命令必须
+    加 `--no-path-resolution`；老版本 compose 没这个 flag 时退回「剥离 runner 前缀」
+    后处理，并在 smoke test 里断言 `/home/runner` 不出现。
+    配套：登记「默认启动服务的宿主 bind 白名单」——上游新增 bind 时大声失败，
+    迫使运维确认目标主机是否需要物化对应文件（dify 的 `ssrf_proxy/*.template`
+    与 `volumes/sandbox/{dependencies,conf}` 就是这类必须先放好的仓库文件）。
 
 ## 仓库结构：每项目一个 orphan 分支
 
