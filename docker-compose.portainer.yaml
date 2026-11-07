@@ -204,6 +204,11 @@ services:
   # 标签里的 $$ 是给 compose 部署期插值的转义，部署后 traefik 看到的是 $1。
   firecrawl-mcp:
     image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/firecrawl-mcp-server:latest
+    # PID 1 交给 tini：容器内 PID 1 对 SIGKILL/SIGSTOP 免疫（内核 SIGNAL_UNKILLABLE），
+    # 而本服务的命令末尾是 `exec node ...`，不加 init 时 node 恰好就是 PID 1 ——
+    # 自愈脚本的 kill 会变成静默空操作。init 后 node 变成子进程，可被杀；
+    # 顺带由 tini 回收僵尸子进程（实测该容器会残留 [node]/[pkill] 僵尸）。
+    init: true
     container_name: firecrawl-mcp
     restart: unless-stopped
     entrypoint: ["sh", "-c"]
@@ -217,7 +222,7 @@ services:
       # node_modules 本身属 root 无执行权限问题，直接用 /app/node_modules。
       # 重启时 rm 重拷，保证 patch 总在 pristine 底子上跑、幂等不误伤。
       - |
-        rm -rf /tmp/app-root && cp -r /app /tmp/app-root && node -e '
+        rm -f /tmp/mcp-hc-ok /tmp/mcp-hc-fail && rm -rf /tmp/app-root && cp -r /app /tmp/app-root && node -e '
         const fs = require("fs"), path = require("path");
         function walk(d) {
           let r = [];
@@ -686,6 +691,24 @@ services:
     networks:
       - backend
       - reverse-proxy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          timeout 5 wget -q -T 5 -O /dev/null http://127.0.0.1:3000/health
+          && { touch /tmp/mcp-hc-ok; rm -f /tmp/mcp-hc-fail; exit 0; };
+          n=$$(cat /tmp/mcp-hc-fail 2>/dev/null);
+          n=$$(( $${n:-0} + 1 ));
+          echo "$$n" > /tmp/mcp-hc-fail;
+          if [ -f /tmp/mcp-hc-ok ] && [ "$$n" -ge 3 ]; then
+            echo "mcp unresponsive for $$n consecutive healthchecks; killing node to force container restart" >&2;
+            pkill -KILL -f '^node /tmp/app-root/dist/index\.js$$';
+          fi;
+          exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 4
+      start_period: 60s
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=reverse-proxy"

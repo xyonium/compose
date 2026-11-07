@@ -133,7 +133,7 @@ services:
   firecrawl-mcp:
     command:
       - |
-        rm -rf /tmp/app-root && cp -r /app /tmp/app-root && node -e '
+        rm -f /tmp/mcp-hc-ok /tmp/mcp-hc-fail && rm -rf /tmp/app-root && cp -r /app /tmp/app-root && node -e '
         const fs = require("fs"), path = require("path");
         function walk(d) {
           let r = [];
@@ -594,7 +594,26 @@ services:
       HTTP_STREAMABLE_SERVER: "true"
     expose:
       - "3000"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          timeout 5 wget -q -T 5 -O /dev/null http://127.0.0.1:3000/health
+          && { touch /tmp/mcp-hc-ok; rm -f /tmp/mcp-hc-fail; exit 0; };
+          n=$$(cat /tmp/mcp-hc-fail 2>/dev/null);
+          n=$$(( $${n:-0} + 1 ));
+          echo "$$n" > /tmp/mcp-hc-fail;
+          if [ -f /tmp/mcp-hc-ok ] && [ "$$n" -ge 3 ]; then
+            echo "mcp unresponsive for $$n consecutive healthchecks; killing node to force container restart" >&2;
+            pkill -KILL -f '^node /tmp/app-root/dist/index\.js$$';
+          fi;
+          exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 4
+      start_period: 60s
     image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/firecrawl-mcp-server@sha256:f0a646f93dc1c06b2620111a69051c123643f6a2a3cb526e8b1a28d255d103db
+    init: true
     labels:
       - traefik.enable=true
       - traefik.docker.network=reverse-proxy
