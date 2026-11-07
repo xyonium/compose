@@ -667,6 +667,12 @@ services:
       FIRECRAWL_API_URL: "http://api:3002"
       # 对外域名透传：启动 patch 的 REMOTE PARSE NOTE 用它写 parse 端点
       FIRECRAWL_DOMAIN: ${FIRECRAWL_DOMAIN}
+      # FastMCP 的 Host 白名单（DNS-rebinding 防护）。镜像内默认只放行
+      # localhost/127.0.0.1/[::1]（HOST=0.0.0.0 属通配，会被跳过），所以经
+      # traefik 进来、Host=对外域名的请求会被 403「Forbidden: Host ... is not
+      # allowed」——2026-11-07 Arcane 整体重建后 mcp 全部工具 403 就是这个原因
+      # （此前两个月未重建过，跑的还是不带该校验的旧进程）。这里显式放行本栈域名。
+      FIRECRAWL_MCP_ALLOWED_HOSTS: ${FIRECRAWL_DOMAIN}
       FIRECRAWL_RETRY_MAX_ATTEMPTS: "10"
       FIRECRAWL_RETRY_INITIAL_DELAY: "500"
       FIRECRAWL_NO_SEARCH_FEEDBACK: "true"
