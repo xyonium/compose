@@ -56,17 +56,17 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/ssrf_proxy/squid-agent.conf.template
+        source: ./ssrf_proxy/squid-agent.conf.template
         target: /etc/squid/squid.conf.template
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/ssrf_proxy/squid-common.conf.template
+        source: ./ssrf_proxy/squid-common.conf.template
         target: /etc/squid/dify_common.conf.template
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/ssrf_proxy/docker-agent-entrypoint.sh
+        source: ./ssrf_proxy/docker-agent-entrypoint.sh
         target: /docker-entrypoint-mount.sh
         type: bind
   api:
@@ -171,9 +171,9 @@ services:
     entrypoint:
       - /docker-entrypoint.sh
     env_file:
-      - path: /home/runner/work/compose/compose/envs/infrastructure/certbot.env
+      - path: ./envs/infrastructure/certbot.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/infrastructure/certbot.defaults
+      - path: ./envs/infrastructure/certbot.defaults
         required: true
     image: certbot/certbot
     networks:
@@ -183,39 +183,39 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/certbot/conf
+        source: ./volumes/certbot/conf
         target: /etc/letsencrypt
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/certbot/www
+        source: ./volumes/certbot/www
         target: /var/www/html
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/certbot/logs
+        source: ./volumes/certbot/logs
         target: /var/log/letsencrypt
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/certbot/conf/live
+        source: ./volumes/certbot/conf/live
         target: /etc/letsencrypt/live
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/certbot/update-cert.template.txt
+        source: ./certbot/update-cert.template.txt
         target: /update-cert.template.txt
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/certbot/docker-entrypoint.sh
+        source: ./certbot/docker-entrypoint.sh
         target: /docker-entrypoint.sh
         type: bind
   chroma:
     env_file:
-      - path: /home/runner/work/compose/compose/envs/vectorstores/chroma.env
+      - path: ./envs/vectorstores/chroma.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/vectorstores/chroma.defaults
+      - path: ./envs/vectorstores/chroma.defaults
         required: true
     image: ghcr.io/chroma-core/chroma:0.5.20
     networks:
@@ -226,21 +226,21 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/chroma
+        source: ./volumes/chroma
         target: /chroma/chroma
         type: bind
   couchbase-server:
     build:
-      context: /home/runner/work/compose/compose/couchbase-server
+      context: ./couchbase-server
       dockerfile: Dockerfile
     command: sh -c "/opt/couchbase/init/init-cbserver.sh"
     container_name: couchbase-server
     entrypoint:
       - ""
     env_file:
-      - path: /home/runner/work/compose/compose/envs/vectorstores/couchbase.env
+      - path: ./envs/vectorstores/couchbase.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/vectorstores/couchbase.defaults
+      - path: ./envs/vectorstores/couchbase.defaults
         required: true
     environment:
       - CLUSTER_NAME=dify_search
@@ -268,7 +268,7 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/couchbase/data
+        source: ./volumes/couchbase/data
         target: /opt/couchbase/var/lib/couchbase/data
         type: bind
     working_dir: /opt/couchbase
@@ -278,11 +278,11 @@ services:
       - -c
       - exec docker-entrypoint.sh mysqld "--max_connections=$$MYSQL_MAX_CONNECTIONS" "--innodb_buffer_pool_size=$$MYSQL_INNODB_BUFFER_POOL_SIZE" "--innodb_log_file_size=$$MYSQL_INNODB_LOG_FILE_SIZE" "--innodb_flush_log_at_trx_commit=$$MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT"
     env_file:
-      - path: /home/runner/work/compose/compose/envs/databases/db-postgres.env
+      - path: ./envs/databases/db-postgres.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/databases/db-mysql.env
+      - path: ./envs/databases/db-mysql.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/databases/db-mysql.defaults
+      - path: ./envs/databases/db-mysql.defaults
         required: true
     healthcheck:
       interval: 1s
@@ -308,9 +308,9 @@ services:
       - -c
       - exec docker-entrypoint.sh postgres -c "max_connections=$$POSTGRES_MAX_CONNECTIONS" -c "shared_buffers=$$POSTGRES_SHARED_BUFFERS" -c "work_mem=$$POSTGRES_WORK_MEM" -c "maintenance_work_mem=$$POSTGRES_MAINTENANCE_WORK_MEM" -c "effective_cache_size=$$POSTGRES_EFFECTIVE_CACHE_SIZE" -c "statement_timeout=$$POSTGRES_STATEMENT_TIMEOUT" -c "idle_in_transaction_session_timeout=$$POSTGRES_IDLE_IN_TRANSACTION_SESSION_TIMEOUT"
     env_file:
-      - path: /home/runner/work/compose/compose/envs/databases/db-postgres.env
+      - path: ./envs/databases/db-postgres.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/databases/db-postgres.defaults
+      - path: ./envs/databases/db-postgres.defaults
         required: true
     healthcheck:
       interval: 1s
@@ -341,9 +341,9 @@ services:
       - -c
       - sh /docker-entrypoint-mount.sh
     env_file:
-      - path: /home/runner/work/compose/compose/envs/vectorstores/elasticsearch.env
+      - path: ./envs/vectorstores/elasticsearch.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/vectorstores/elasticsearch.defaults
+      - path: ./envs/vectorstores/elasticsearch.defaults
         required: true
     environment:
       VECTOR_STORE: ${VECTOR_STORE:-}
@@ -375,7 +375,7 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/elasticsearch/docker-entrypoint.sh
+        source: ./elasticsearch/docker-entrypoint.sh
         target: /docker-entrypoint-mount.sh
         type: bind
       - source: dify_es01_data
@@ -386,11 +386,11 @@ services:
     command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
     container_name: milvus-etcd
     env_file:
-      - path: /home/runner/work/compose/compose/envs/vectorstores/milvus.env
+      - path: ./envs/vectorstores/milvus.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/infrastructure/etcd.env
+      - path: ./envs/infrastructure/etcd.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/infrastructure/etcd.defaults
+      - path: ./envs/infrastructure/etcd.defaults
         required: true
     healthcheck:
       interval: 30s
@@ -409,7 +409,7 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/milvus/etcd
+        source: ./volumes/milvus/etcd
         target: /etcd
         type: bind
   init_permissions:
@@ -436,19 +436,18 @@ services:
         target: /app/api/storage
         type: volume
         volume: {}
-      - bind:
-          create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/plugin_daemon
+      - source: plugin_daemon
         target: /app/plugin_daemon/storage
-        type: bind
+        type: volume
+        volume: {}
   iris:
     container_name: iris
     entrypoint:
       - /custom-entrypoint.sh
     env_file:
-      - path: /home/runner/work/compose/compose/envs/vectorstores/iris.env
+      - path: ./envs/vectorstores/iris.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/vectorstores/iris.defaults
+      - path: ./envs/vectorstores/iris.defaults
         required: true
     environment:
       ISC_DATA_DIRECTORY: /durable/iris
@@ -466,17 +465,17 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/iris
+        source: ./volumes/iris
         target: /durable
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/iris/iris-init.script
+        source: ./iris/iris-init.script
         target: /iris-init.script
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/iris/docker-entrypoint.sh
+        source: ./iris/docker-entrypoint.sh
         target: /custom-entrypoint.sh
         type: bind
   kibana:
@@ -683,7 +682,7 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/knowledge-fs-unstructured
+        source: ./volumes/knowledge-fs-unstructured
         target: /app/data
         type: bind
   local_sandbox:
@@ -735,7 +734,7 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/matrixone/data
+        source: ./volumes/matrixone/data
         target: /mo-data
         type: bind
   milvus-standalone:
@@ -752,11 +751,11 @@ services:
         condition: service_started
         required: true
     env_file:
-      - path: /home/runner/work/compose/compose/envs/vectorstores/milvus.env
+      - path: ./envs/vectorstores/milvus.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/infrastructure/milvus-standalone.env
+      - path: ./envs/infrastructure/milvus-standalone.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/infrastructure/milvus-standalone.defaults
+      - path: ./envs/infrastructure/milvus-standalone.defaults
         required: true
     healthcheck:
       interval: 30s
@@ -786,18 +785,18 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/milvus/milvus
+        source: ./volumes/milvus/milvus
         target: /var/lib/milvus
         type: bind
   minio:
     command: minio server /minio_data --console-address ":9001"
     container_name: milvus-minio
     env_file:
-      - path: /home/runner/work/compose/compose/envs/vectorstores/milvus.env
+      - path: ./envs/vectorstores/milvus.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/infrastructure/minio.env
+      - path: ./envs/infrastructure/minio.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/infrastructure/minio.defaults
+      - path: ./envs/infrastructure/minio.defaults
         required: true
     healthcheck:
       interval: 30s
@@ -816,7 +815,7 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/milvus/minio
+        source: ./volumes/milvus/minio
         target: /minio_data
         type: bind
   myscale:
@@ -833,17 +832,17 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/myscale/data
+        source: ./volumes/myscale/data
         target: /var/lib/clickhouse
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/myscale/log
+        source: ./volumes/myscale/log
         target: /var/log/clickhouse-server
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/myscale/config/users.d/custom_users_config.xml
+        source: ./volumes/myscale/config/users.d/custom_users_config.xml
         target: /etc/clickhouse-server/users.d/custom_users_config.xml
         type: bind
   nginx:
@@ -859,9 +858,9 @@ services:
       - -c
       - "cp /docker-entrypoint-mount.sh /docker-entrypoint.sh && sed -i 's/\r$$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh && /docker-entrypoint.sh"
     env_file:
-      - path: /home/runner/work/compose/compose/envs/infrastructure/nginx.env
+      - path: ./envs/infrastructure/nginx.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/infrastructure/nginx.defaults
+      - path: ./envs/infrastructure/nginx.defaults
         required: true
     environment:
       NGINX_PORT: ${NGINX_PORT:-80}
@@ -878,55 +877,55 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/nginx/nginx.conf.template
+        source: ./nginx/nginx.conf.template
         target: /etc/nginx/nginx.conf.template
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/nginx/proxy.conf.template
+        source: ./nginx/proxy.conf.template
         target: /etc/nginx/proxy.conf.template
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/nginx/https.conf.template
+        source: ./nginx/https.conf.template
         target: /etc/nginx/https.conf.template
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/nginx/conf.d
+        source: ./nginx/conf.d
         target: /etc/nginx/conf.d
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/nginx/docker-entrypoint.sh
+        source: ./nginx/docker-entrypoint.sh
         target: /docker-entrypoint-mount.sh
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/nginx/ssl
+        source: ./nginx/ssl
         target: /etc/ssl
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/certbot/conf/live
+        source: ./volumes/certbot/conf/live
         target: /etc/letsencrypt/live
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/certbot/conf
+        source: ./volumes/certbot/conf
         target: /etc/letsencrypt
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/certbot/www
+        source: ./volumes/certbot/www
         target: /var/www/html
         type: bind
   oceanbase:
     container_name: oceanbase
     env_file:
-      - path: /home/runner/work/compose/compose/envs/vectorstores/oceanbase.env
+      - path: ./envs/vectorstores/oceanbase.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/vectorstores/oceanbase.defaults
+      - path: ./envs/vectorstores/oceanbase.defaults
         required: true
     environment:
       LANG: C.UTF-8
@@ -952,24 +951,24 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/oceanbase/data
+        source: ./volumes/oceanbase/data
         target: /root/ob
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/oceanbase/conf
+        source: ./volumes/oceanbase/conf
         target: /root/.obd/cluster
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/oceanbase/init.d
+        source: ./volumes/oceanbase/init.d
         target: /root/boot/init.d
         type: bind
   opengauss:
     env_file:
-      - path: /home/runner/work/compose/compose/envs/vectorstores/opengauss.env
+      - path: ./envs/vectorstores/opengauss.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/vectorstores/opengauss.defaults
+      - path: ./envs/vectorstores/opengauss.defaults
         required: true
     environment:
       GS_PORT: ${OPENGAUSS_PORT:-6600}
@@ -992,15 +991,15 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/opengauss/data
+        source: ./volumes/opengauss/data
         target: /var/lib/opengauss/data
         type: bind
   opensearch:
     container_name: opensearch
     env_file:
-      - path: /home/runner/work/compose/compose/envs/vectorstores/opensearch.env
+      - path: ./envs/vectorstores/opensearch.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/vectorstores/opensearch.defaults
+      - path: ./envs/vectorstores/opensearch.defaults
         required: true
     image: opensearchproject/opensearch:latest
     networks:
@@ -1018,7 +1017,7 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/opensearch/data
+        source: ./volumes/opensearch/data
         target: /usr/share/opensearch/data
         type: bind
   opensearch-dashboards:
@@ -1037,14 +1036,14 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/opensearch/opensearch_dashboards.yml
+        source: ./volumes/opensearch/opensearch_dashboards.yml
         target: /usr/share/opensearch-dashboards/config/opensearch_dashboards.yml
         type: bind
   oracle:
     env_file:
-      - path: /home/runner/work/compose/compose/envs/vectorstores/oracle.env
+      - path: ./envs/vectorstores/oracle.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/vectorstores/oracle.defaults
+      - path: ./envs/vectorstores/oracle.defaults
         required: true
     image: container-registry.oracle.com/database/free:latest
     networks:
@@ -1058,14 +1057,14 @@ services:
         type: volume
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/startupscripts
+        source: ./startupscripts
         target: /opt/oracle/scripts/startup
         type: bind
   pgvecto-rs:
     env_file:
-      - path: /home/runner/work/compose/compose/envs/vectorstores/pgvecto-rs.env
+      - path: ./envs/vectorstores/pgvecto-rs.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/vectorstores/pgvecto-rs.defaults
+      - path: ./envs/vectorstores/pgvecto-rs.defaults
         required: true
     healthcheck:
       interval: 1s
@@ -1083,16 +1082,16 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/pgvecto_rs/data
+        source: ./volumes/pgvecto_rs/data
         target: /var/lib/postgresql/data
         type: bind
   pgvector:
     entrypoint:
       - /docker-entrypoint.sh
     env_file:
-      - path: /home/runner/work/compose/compose/envs/vectorstores/pgvector.env
+      - path: ./envs/vectorstores/pgvector.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/vectorstores/pgvector.defaults
+      - path: ./envs/vectorstores/pgvector.defaults
         required: true
     healthcheck:
       interval: 1s
@@ -1110,12 +1109,12 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/pgvector/data
+        source: ./volumes/pgvector/data
         target: /var/lib/postgresql/data
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/pgvector/docker-entrypoint.sh
+        source: ./pgvector/docker-entrypoint.sh
         target: /docker-entrypoint.sh
         type: bind
   plugin_daemon:
@@ -1153,16 +1152,15 @@ services:
       ssrf_proxy_network: null
     restart: always
     volumes:
-      - bind:
-          create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/plugin_daemon
+      - source: plugin_daemon
         target: /app/storage
-        type: bind
+        type: volume
+        volume: {}
   qdrant:
     env_file:
-      - path: /home/runner/work/compose/compose/envs/vectorstores/qdrant.env
+      - path: ./envs/vectorstores/qdrant.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/vectorstores/qdrant.defaults
+      - path: ./envs/vectorstores/qdrant.defaults
         required: true
     image: langgenius/qdrant:v1.8.3
     networks:
@@ -1177,7 +1175,7 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/qdrant
+        source: ./volumes/qdrant
         target: /qdrant/storage
         type: bind
   redis:
@@ -1213,20 +1211,20 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/sandbox/dependencies
+        source: ./volumes/sandbox/dependencies
         target: /dependencies
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/sandbox/conf
+        source: ./volumes/sandbox/conf
         target: /conf
         type: bind
   seekdb:
     container_name: seekdb
     env_file:
-      - path: /home/runner/work/compose/compose/envs/vectorstores/seekdb.env
+      - path: ./envs/vectorstores/seekdb.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/vectorstores/seekdb.defaults
+      - path: ./envs/vectorstores/seekdb.defaults
         required: true
     environment:
       REPORTER: dify-ai-seekdb
@@ -1248,7 +1246,7 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/seekdb
+        source: ./volumes/seekdb
         target: /var/lib/oceanbase
         type: bind
   ssrf_proxy:
@@ -1269,17 +1267,17 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/ssrf_proxy/squid.conf.template
+        source: ./ssrf_proxy/squid.conf.template
         target: /etc/squid/squid.conf.template
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/ssrf_proxy/squid-common.conf.template
+        source: ./ssrf_proxy/squid-common.conf.template
         target: /etc/squid/dify_common.conf.template
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/ssrf_proxy/docker-entrypoint.sh
+        source: ./ssrf_proxy/docker-entrypoint.sh
         target: /docker-entrypoint-mount.sh
         type: bind
   unstructured:
@@ -1292,7 +1290,7 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/unstructured
+        source: ./volumes/unstructured
         target: /app/data
         type: bind
   vastbase:
@@ -1322,29 +1320,29 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/vastbase/lic
+        source: ./vastbase/lic
         target: /home/vastbase/vastbase/lic
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/vastbase/data
+        source: ./vastbase/data
         target: /home/vastbase/data
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/vastbase/backup
+        source: ./vastbase/backup
         target: /home/vastbase/backup
         type: bind
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/vastbase/backup_log
+        source: ./vastbase/backup_log
         target: /home/vastbase/backup_log
         type: bind
   weaviate:
     env_file:
-      - path: /home/runner/work/compose/compose/envs/vectorstores/weaviate.env
+      - path: ./envs/vectorstores/weaviate.env
         required: false
-      - path: /home/runner/work/compose/compose/envs/vectorstores/weaviate.defaults
+      - path: ./envs/vectorstores/weaviate.defaults
         required: true
     image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/semitechnologies/weaviate:1.39.13
     networks:
@@ -1489,7 +1487,7 @@ services:
     volumes:
       - bind:
           create_host_path: true
-        source: /home/runner/work/compose/compose/volumes/app/storage
+        source: ./volumes/app/storage
         target: /app/api/storage
         type: bind
 volumes:
@@ -1505,6 +1503,8 @@ volumes:
     name: dify_dify_es01_data
   oradata:
     name: dify_oradata
+  plugin_daemon:
+    name: dify_plugin_daemon
   redis:
     name: dify_redis
   weaviate:
