@@ -12,7 +12,7 @@ networks:
 services:
   api:
     command: |
-      sh -c " sed -i 's/getModelLimits(\"gpt-4o-mini\")/getModelLimits(\"gemini-2.5-flash-lite\")/g' /app/dist/src/scraper/scrapeURL/transformers/llmExtract.js && echo '✅ Patched: getModelLimits now uses gemini-2.5-flash-lite (1M input, 65K output)' && sed -i 's#https://api\.runpod\.ai/v2/#http://pdf-ocr:3200/runpod/v2/#g' /app/dist/src/scraper/scrapeURL/engines/pdf/runpodMU.js && echo '✅ Patched: RunPod MU base URL -> pdf-ocr adapter (self-hosted MinerU)' && node dist/src/harness.js --start-docker "
+      sh -c " rm -f /tmp/api-hc-ok /tmp/api-hc-fail && sed -i 's/getModelLimits(\"gpt-4o-mini\")/getModelLimits(\"gemini-2.5-flash-lite\")/g' /app/dist/src/scraper/scrapeURL/transformers/llmExtract.js && echo '✅ Patched: getModelLimits now uses gemini-2.5-flash-lite (1M input, 65K output)' && sed -i 's#https://api\.runpod\.ai/v2/#http://pdf-ocr:3200/runpod/v2/#g' /app/dist/src/scraper/scrapeURL/engines/pdf/runpodMU.js && echo '✅ Patched: RunPod MU base URL -> pdf-ocr adapter (self-hosted MinerU)' && node dist/src/harness.js --start-docker "
     container_name: firecrawl
     cpus: 4
     depends_on:
@@ -70,6 +70,7 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - TEST_API_KEY=${TEST_API_KEY}
       - USE_DB_AUTHENTICATION=${USE_DB_AUTHENTICATION:-false}
+      - USE_GO_MARKDOWN_PARSER=${USE_GO_MARKDOWN_PARSER:-true}
       - WORKER_PORT=${WORKER_PORT:-3005}
       - PARSE_UPLOAD_REF_SECRET=${PARSE_UPLOAD_REF_SECRET:-}
       - PDF_RUST_EXTRACT_ENABLE=${PDF_RUST_EXTRACT_ENABLE:-true}
@@ -78,6 +79,23 @@ services:
       - RUNPOD_MU_POD_ID=${RUNPOD_MU_POD_ID:-local}
     extra_hosts:
       - host.docker.internal:host-gateway
+    healthcheck:
+      interval: 30s
+      retries: 3
+      start_period: 120s
+      test:
+        - CMD-SHELL
+        - >-
+          curl -fsS -m 5 http://127.0.0.1:3002/v0/health/readiness >/dev/null 2>&1
+          && { touch /tmp/api-hc-ok; rm -f /tmp/api-hc-fail; exit 0; };
+          n=$$(( $$(cat /tmp/api-hc-fail 2>/dev/null || echo 0) + 1 ));
+          echo "$$n" > /tmp/api-hc-fail;
+          if [ -f /tmp/api-hc-ok ] && [ "$$n" -ge 3 ]; then
+            echo "api unresponsive for $$n consecutive healthchecks; killing api to force container restart" >&2;
+            pkill -KILL -f '^node dist/src/index\.js$$';
+          fi;
+          exit 1
+      timeout: 10s
     image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/firecrawl@sha256:9197579f5d43770eae05c0f873bf7187ee9244b4dde124923e80c8ed4b07f1aa
     labels:
       - traefik.enable=true
