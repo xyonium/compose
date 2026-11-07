@@ -76,19 +76,38 @@ jobs:
           mkdir -p volumes/sandbox/dependencies
           touch volumes/sandbox/dependencies/.gitkeep
 
-          # 自检：compose 里 bind 的源文件必须都在分支里
+          # 自检：默认启动服务 bind 的运行时文件必须在分支里
           python3 - <<'PYEOF'
-          import re, sys, os
-          t = open('docker-compose.upstream.yaml').read()
-          srcs = set(re.findall(r'-\s+\./(\S+?):/', t))
-          missing = [s for s in sorted(srcs)
-                     if s.startswith(('ssrf_proxy/', 'volumes/')) and not os.path.exists(s)]
+          import sys, os, yaml
+          REQUIRED = [
+              'ssrf_proxy/squid.conf.template',
+              'ssrf_proxy/squid-common.conf.template',
+              'ssrf_proxy/squid-agent.conf.template',
+              'ssrf_proxy/docker-entrypoint.sh',
+              'ssrf_proxy/docker-agent-entrypoint.sh',
+              'volumes/sandbox/conf/config.yaml',
+              'volumes/sandbox/dependencies',
+          ]
+          missing = [p for p in REQUIRED if not os.path.exists(p)]
           if missing:
-              print('::error::upstream binds files that were not synced into the branch:')
-              for m in missing:
-                  print('::error::  ' + m)
+              print('::error::分支缺少 bind 源文件：' + ', '.join(missing))
               sys.exit(1)
-          print(f'ssrf_proxy/sandbox 运行时文件已同步（{len([s for s in srcs if s.startswith(("ssrf_proxy/","volumes/"))])} 个 bind 源全部存在）')
+          # 交叉验证：上游 compose 里默认启动服务实际 bind 的 ssrf_proxy/ 文件，
+          # 必须都在上面清单里（上游新增模板时提醒补清单）
+          d = yaml.safe_load(open('docker-compose.upstream.yaml'))
+          used = set()
+          for name, svc in d.get('services', {}).items():
+              if svc.get('profiles'):
+                  continue
+              for v in svc.get('volumes') or []:
+                  src = v.get('source') if isinstance(v, dict) else str(v).split(':')[0]
+                  if src and str(src).startswith('ssrf_proxy/'):
+                      used.add(str(src))
+          unknown = sorted(used - set(REQUIRED))
+          if unknown:
+              print('::error::上游新增了未登记的 ssrf_proxy bind：' + ', '.join(unknown))
+              sys.exit(1)
+          print(f'运行时文件齐全（{len(REQUIRED)} 项），ssrf_proxy bind 全部已登记')
           PYEOF
 
       - name: Version drift check (overlay tags must match upstream)
