@@ -77,7 +77,7 @@
   工具描述已注入 REMOTE PARSE NOTE 引导 agent 改用 HTTP multipart `POST /v2/parse`；
   NOTE 里的端点域名由容器 env `${FIRECRAWL_DOMAIN}` 生成（2026-10 起不再硬编码）
 
-## api 假死与自愈（2026-11-07 事故）
+## 假死与自愈（2026-11-07 事故）
 
 **现象**：容器一直 `Up`、`nuq-reconciler` 等子进程照常打日志，但 `:3002` 从 TCP 握手到首字节
 永久无响应；内置 `web_search` / `web_fetch` 与 MCP 的 `firecrawl_search` / `firecrawl_scrape`
@@ -102,6 +102,32 @@
 
 **注意**：不要把 `healthcheck` 改成只"标 unhealthy"就完事——Docker 原生**不会**重启 unhealthy
 容器，必须由检查自身杀掉进程才能触发 `restart` 策略。
+
+### mcp 的自愈，以及「PID 1 免疫 SIGKILL」这个坑
+
+`firecrawl-mcp` 也挂了同款自愈：探 FastMCP 自带的 `GET /health`（实测 200，且**豁免**
+`allowedHosts` 校验），连续 3 次失败且此前健康过 → `pkill` 掉 node → 容器重启。
+
+**关键陷阱**：该服务命令末尾是 `exec node /tmp/app-root/dist/index.js`，所以不加干预时
+**node 就是 PID 1**。而 Linux 内核对 PID namespace 的 init 会**丢弃同一 namespace 内发来的
+SIGKILL/SIGSTOP**——`kill -KILL 1` 返回 0 但什么也不会发生。实测：
+
+```
+docker exec <c> kill -KILL 1   →  rc=0，容器仍然 running
+```
+
+所以必须在服务上加 **`init: true`**（tini 当 PID 1，node 退居子进程，实测变成 PID 7）。
+**改这两个服务中任何一个的启动命令时，都要先确认自愈脚本杀的是不是 PID 1。**
+
+另外两个刻意的选择（都不显眼但有用）：
+
+- **`retries: 4` > 自杀阈值 3**：第 3 次失败时就杀掉进程走重启，不让 Docker 先标 `unhealthy`。
+  traefik 的 Docker provider 会把 `unhealthy` 容器从后端摘掉，单副本下那等于直接断服务。
+- **探 `GET /health` 而不是 `POST /mcp`**：两者共用同一个 `http.Server` 与事件循环，对"事件
+  循环锁死"的检出率相同；但 `/health` 不耦合 MCP 协议头与鉴权，改协议不会把自愈变成自杀循环。
+
+实测注入 `kill -STOP`（等价假死）：t≈62 s 第 3 次失败触发 kill，t=75 s 容器已自动重启并
+`healthy`，全程无人工；期间 Docker 状态一直是 `healthy`→`starting`，没经过 `unhealthy`。
 
 [PR #4433]: https://github.com/firecrawl/firecrawl/pull/4433
 
