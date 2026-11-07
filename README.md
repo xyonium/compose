@@ -63,6 +63,8 @@
 | `PDF_MU_V2_*` | **别配**。上游 v2 是 fire-and-forget 影子实验，结果只进日志，且仍以 v1 配置为前提 |
 | `CLOUD_SERVICE` | **千万别在 MCP 上设 `true`**：虽能把 parse 工具切成 hosted 两阶段上传，但会连带开启 OAuth + SAFE_MODE，无凭据时 getClient 直接 Unauthorized，全部免 key 用法报废 |
 | `RESEARCH_PROXY_URL` | 不设则 api 根本不挂载 `/v2/search/research/*` 与 `/v2/search/developer` 路由（不是报错，是路由不存在） |
+| `USE_GO_MARKDOWN_PARSER` | 上游默认**关闭**、SELF_HOST 文档完全没提。本栈默认 `true`：HTML→Markdown 走镜像内的 Go 解析器（koffi `.async` → libuv 线程池），**不占 Node 主事件循环**。不设则回落纯 JS Turndown，在 api 进程内同步跑，3 MB 级大表页实测 100% CPU 卡死数分钟，把整个 `:3002`（含 `/v2/search`）带死 |
+| `FIRECRAWL_MCP_ALLOWED_HOSTS` | mcp 服务的 FastMCP Host 白名单（DNS-rebinding 防护）。默认只放行 `localhost`/`127.0.0.1`/`[::1]`，`HOST=0.0.0.0` 属通配会被跳过。**必须填对外域名**（本栈用 `${FIRECRAWL_DOMAIN}`），否则经 traefik 的所有 MCP 调用 403 `Forbidden: Host ... is not allowed`。别图省事写 `*` |
 
 其他容易误判的事实：
 
@@ -74,6 +76,34 @@
 - **MCP 的 parse 工具**：local 模式下 `filePath` 在 **MCP 容器**文件系统上解析，客户端本地路径必 ENOENT。
   工具描述已注入 REMOTE PARSE NOTE 引导 agent 改用 HTTP multipart `POST /v2/parse`；
   NOTE 里的端点域名由容器 env `${FIRECRAWL_DOMAIN}` 生成（2026-10 起不再硬编码）
+
+## api 假死与自愈（2026-11-07 事故）
+
+**现象**：容器一直 `Up`、`nuq-reconciler` 等子进程照常打日志，但 `:3002` 从 TCP 握手到首字节
+永久无响应；内置 `web_search` / `web_fetch` 与 MCP 的 `firecrawl_search` / `firecrawl_scrape`
+全挂，只有人工重启能恢复（本次持续约 1.5 小时）。
+
+**根因**：`/v2/scrape` 走 `skipNuq: true`，整套抓取管线**在 api 进程内**同步执行。抓到大表页
+（上游阈值 `MAX_HTML_SIZE_FOR_MARKDOWN_CHECK = 300 KB` 只跳过"质量检查"那次转换，**不跳过
+输出 markdown 的转换**）时，纯 JS Turndown 在主线程上把事件循环锁死 → 进程不退出 →
+`harness.js` 的 exit 监听与 `restart: unless-stopped` 都不触发。上游 [PR #4433] 描述同一模式。
+
+**现在有两道防线（都落在本分支的 `docker-compose.portainer.yaml`）**：
+
+1. `USE_GO_MARKDOWN_PARSER=true` —— 治本。同一段 3 MB HTML 实测：Go 解析器 1.9 s 且事件循环
+   全程可调度（tick 182≈194）；Turndown >4 min 仍卡 R 状态。缺 `.so` 时自动回落，不会更糟。
+   **⚠ 升级后回归点**：若上游把该调用改回同步 koffi，这个开关就不再保护主线程，需重新做阻塞测试。
+2. `api` 的 `healthcheck` 自愈 —— 兜底。探 `/v0/health/readiness`（实测 2-3 ms，纯 liveness，
+   不查依赖），**连续 3 次失败且本容器此前健康过** → `pkill -KILL` 掉 api 子进程 → harness
+   gracefulShutdown 退出容器 → `restart` 策略拉起全套。marker 文件在 `command` 开头清除，
+   冷启动阶段（从未 healthy）绝不误杀。
+   实测注入 `kill -STOP`（等价假死）：t=90 s 判 unhealthy 并触发 kill，t=105 s 容器已自动重启，
+   约 2 分钟自愈，无需人工。
+
+**注意**：不要把 `healthcheck` 改成只"标 unhealthy"就完事——Docker 原生**不会**重启 unhealthy
+容器，必须由检查自身杀掉进程才能触发 `restart` 策略。
+
+[PR #4433]: https://github.com/firecrawl/firecrawl/pull/4433
 
 ## 平台项目 env 凭据表
 
