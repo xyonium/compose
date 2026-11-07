@@ -251,10 +251,16 @@ jobs:
           # dify 的 sandbox/ssrf_proxy 依赖仓库内配置文件，这几项是部署主机必须
           # 物化的前提，登记在这里以便上游新增 bind 时大声失败。
           ALLOWED_HOST_BINDS = {
+              # sandbox：上游把依赖与配置以仓库内文件 bind 进去
               ('sandbox', '/dependencies'),
               ('sandbox', '/conf'),
-              ('ssrf_proxy', '/etc/squid/squid.conf'),
-              ('agent_ssrf_proxy', '/etc/squid/squid.conf'),
+              # ssrf_proxy / agent_ssrf_proxy：squid 配置模板与入口脚本来自仓库 ssrf_proxy/
+              ('ssrf_proxy', '/etc/squid/squid.conf.template'),
+              ('ssrf_proxy', '/etc/squid/dify_common.conf.template'),
+              ('ssrf_proxy', '/docker-entrypoint-mount.sh'),
+              ('agent_ssrf_proxy', '/etc/squid/squid.conf.template'),
+              ('agent_ssrf_proxy', '/etc/squid/dify_common.conf.template'),
+              ('agent_ssrf_proxy', '/docker-entrypoint-mount.sh'),
           }
           unregistered = []
           for name, svc in d.get('services', {}).items():
