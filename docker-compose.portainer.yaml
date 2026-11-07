@@ -21,6 +21,7 @@ services:
   init_permissions:
     volumes:
       - app:/app/api/storage
+      - plugin_daemon:/app/plugin_daemon/storage
 
   api:
     image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-api:1.19.0
@@ -105,6 +106,9 @@ services:
   plugin_daemon:
     image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/langgenius/dify-plugin-daemon:0.6.14-local
     env_file: !reset null
+    # 上游 1.19 起 plugin_daemon 有独立存储目录，改 named volume 持久化
+    volumes:
+      - plugin_daemon:/app/storage
     # 摘掉上游的 debug 宿主端口映射，外部访问只走 traefik
     ports: !reset null
     labels:
@@ -187,3 +191,4 @@ volumes:
   db:
   redis:
   weaviate:
+  plugin_daemon:
