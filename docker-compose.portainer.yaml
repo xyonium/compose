@@ -21,11 +21,15 @@ services:
     # 杀的是 `node dist/api.js` 子进程（PID 1 是 pnpm，不受 PID-1 免疫影响，子进程
     # 一死 pnpm 退出、容器由 restart 策略拉起 —— 已实测）。
     # 不在单次失败上动手：两次探测间隔 3s，规避偶发抖动；也免掉跨重启的 marker 状态。
+    # **且只在拿到 HTTP 503（浏览器已死的签名）时才杀**：连接被拒=还没监听（冷启动）、
+    # 超时=事件循环卡住，这两种一律不动手。首版没有这个区分，2026-11-08 部署时
+    # 真的在冷启动阶段把自己杀了（health 日志 "killing api server pid 215"
+    # 紧跟在 4 次 exit=1 之后），故补此门。
     healthcheck:
       test:
         - CMD-SHELL
         - >-
-          node -e 'fetch("http://127.0.0.1:3000/health",{signal:AbortSignal.timeout(8000)}).then(function(r){process.exit(r.ok?0:1)}).catch(function(){process.exit(1)})' && exit 0; sleep 3; node -e 'fetch("http://127.0.0.1:3000/health",{signal:AbortSignal.timeout(8000)}).then(function(r){process.exit(r.ok?0:1)}).catch(function(){process.exit(1)})' && exit 0; node -e 'const fs=require("fs");for(const p of fs.readdirSync("/proc")){if(!Number.isInteger(+p))continue;try{const a=fs.readFileSync("/proc/"+p+"/cmdline","utf8").split(String.fromCharCode(0)).filter(Boolean);if(a.length===2&&a[0].endsWith("node")&&a[1]==="dist/api.js"){console.log("killing api server pid "+p);process.kill(+p,"SIGKILL")}}catch(e){}}'; exit 1
+          node -e 'const fs=require("fs");const U="http://127.0.0.1:3000/health";const probe=async()=>{try{const r=await fetch(U,{signal:AbortSignal.timeout(8000)});return r.ok?0:2}catch(e){return 3}};(async()=>{let c=await probe();if(c===0)process.exit(0);await new Promise(function(r){setTimeout(r,3000)});c=await probe();if(c===0)process.exit(0);if(c!==2)process.exit(1);for(const p of fs.readdirSync("/proc")){if(!Number.isInteger(+p))continue;try{const a=fs.readFileSync("/proc/"+p+"/cmdline","utf8").split(String.fromCharCode(0)).filter(Boolean);if(a.length===2&&a[0].endsWith("node")&&a[1]==="dist/api.js"){console.log("browser dead, killing api server pid "+p);process.kill(+p,"SIGKILL")}}catch(e){}}process.exit(1)})()'
       interval: 30s
       timeout: 30s
       retries: 4

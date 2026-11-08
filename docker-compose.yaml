@@ -746,7 +746,7 @@ services:
       test:
         - CMD-SHELL
         - >-
-          node -e 'fetch("http://127.0.0.1:3000/health",{signal:AbortSignal.timeout(8000)}).then(function(r){process.exit(r.ok?0:1)}).catch(function(){process.exit(1)})' && exit 0; sleep 3; node -e 'fetch("http://127.0.0.1:3000/health",{signal:AbortSignal.timeout(8000)}).then(function(r){process.exit(r.ok?0:1)}).catch(function(){process.exit(1)})' && exit 0; node -e 'const fs=require("fs");for(const p of fs.readdirSync("/proc")){if(!Number.isInteger(+p))continue;try{const a=fs.readFileSync("/proc/"+p+"/cmdline","utf8").split(String.fromCharCode(0)).filter(Boolean);if(a.length===2&&a[0].endsWith("node")&&a[1]==="dist/api.js"){console.log("killing api server pid "+p);process.kill(+p,"SIGKILL")}}catch(e){}}'; exit 1
+          node -e 'const fs=require("fs");const U="http://127.0.0.1:3000/health";const probe=async()=>{try{const r=await fetch(U,{signal:AbortSignal.timeout(8000)});return r.ok?0:2}catch(e){return 3}};(async()=>{let c=await probe();if(c===0)process.exit(0);await new Promise(function(r){setTimeout(r,3000)});c=await probe();if(c===0)process.exit(0);if(c!==2)process.exit(1);for(const p of fs.readdirSync("/proc")){if(!Number.isInteger(+p))continue;try{const a=fs.readFileSync("/proc/"+p+"/cmdline","utf8").split(String.fromCharCode(0)).filter(Boolean);if(a.length===2&&a[0].endsWith("node")&&a[1]==="dist/api.js"){console.log("browser dead, killing api server pid "+p);process.kill(+p,"SIGKILL")}}catch(e){}}process.exit(1)})()'
       interval: 30s
       timeout: 30s
       retries: 4
