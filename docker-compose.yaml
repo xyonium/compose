@@ -71,6 +71,7 @@ services:
       - TEST_API_KEY=${TEST_API_KEY}
       - USE_DB_AUTHENTICATION=${USE_DB_AUTHENTICATION:-false}
       - USE_GO_MARKDOWN_PARSER=${USE_GO_MARKDOWN_PARSER:-true}
+      - UV_THREADPOOL_SIZE=${UV_THREADPOOL_SIZE:-16}
       - WORKER_PORT=${WORKER_PORT:-3005}
       - PARSE_UPLOAD_REF_SECRET=${PARSE_UPLOAD_REF_SECRET:-}
       - PDF_RUST_EXTRACT_ENABLE=${PDF_RUST_EXTRACT_ENABLE:-true}
@@ -80,23 +81,30 @@ services:
     extra_hosts:
       - host.docker.internal:host-gateway
     healthcheck:
-      interval: 30s
-      retries: 3
-      start_period: 120s
       test:
         - CMD-SHELL
         - >-
-          curl -fsS -m 5 http://127.0.0.1:3002/v0/health/readiness >/dev/null 2>&1
-          && { touch /tmp/api-hc-ok; rm -f /tmp/api-hc-fail; exit 0; };
-          n=$$(( $$(cat /tmp/api-hc-fail 2>/dev/null || echo 0) + 1 ));
-          echo "$$n" > /tmp/api-hc-fail;
-          if [ -f /tmp/api-hc-ok ] && [ "$$n" -ge 3 ]; then
-            echo "api unresponsive for $$n consecutive healthchecks; killing api to force container restart" >&2;
-            pkill -KILL -f '^node dist/src/index\.js$$';
+          curl -fsS -m 8 http://127.0.0.1:3002/v0/health/readiness >/dev/null 2>&1
+          && { touch /tmp/api-hc-ok 2>/dev/null || true; rm -f /tmp/api-hc-fail 2>/dev/null || true; exit 0; };
+          n=$$(cat /tmp/api-hc-fail 2>/dev/null);
+          n=$$(( $${n:-0} + 1 ));
+          echo "$$n" > /tmp/api-hc-fail 2>/dev/null || n=4;
+          if [ -f /tmp/api-hc-ok ] && [ "$$n" -ge 4 ]; then
+            m="[SELF-HEAL] $$(date -Iseconds) api unresponsive for $$n checks; killing node dist/src tree";
+            echo "$$m" >&2;
+            echo "$$m" >> /proc/1/fd/2 2>/dev/null || true;
+            pkill -TERM -f '^node dist/src/harness\.js' 2>/dev/null || true;
+            sleep 2;
+            pkill -KILL -f '^node dist/src/' 2>/dev/null || true;
           fi;
           exit 1
-      timeout: 10s
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 120s
+      start_interval: 5s
     image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/firecrawl@sha256:9197579f5d43770eae05c0f873bf7187ee9244b4dde124923e80c8ed4b07f1aa
+    init: true
     labels:
       - traefik.enable=true
       - traefik.http.routers.firecrawl.rule=Host(`${FIRECRAWL_DOMAIN}`)
@@ -599,19 +607,22 @@ services:
         - CMD-SHELL
         - >-
           timeout 5 wget -q -T 5 -O /dev/null http://127.0.0.1:3000/health
-          && { touch /tmp/mcp-hc-ok; rm -f /tmp/mcp-hc-fail; exit 0; };
+          && { touch /tmp/mcp-hc-ok 2>/dev/null || true; rm -f /tmp/mcp-hc-fail 2>/dev/null || true; exit 0; };
           n=$$(cat /tmp/mcp-hc-fail 2>/dev/null);
           n=$$(( $${n:-0} + 1 ));
-          echo "$$n" > /tmp/mcp-hc-fail;
+          echo "$$n" > /tmp/mcp-hc-fail 2>/dev/null || n=3;
           if [ -f /tmp/mcp-hc-ok ] && [ "$$n" -ge 3 ]; then
-            echo "mcp unresponsive for $$n consecutive healthchecks; killing node to force container restart" >&2;
+            m="[SELF-HEAL] $$(date -Iseconds) mcp unresponsive for $$n checks; killing node";
+            echo "$$m" >&2;
+            echo "$$m" >> /proc/1/fd/2 2>/dev/null || true;
             pkill -KILL -f '^node /tmp/app-root/dist/index\.js$$';
           fi;
           exit 1
       interval: 30s
-      timeout: 10s
+      timeout: 15s
       retries: 4
       start_period: 60s
+      start_interval: 2s
     image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/firecrawl-mcp-server@sha256:f0a646f93dc1c06b2620111a69051c123643f6a2a3cb526e8b1a28d255d103db
     init: true
     labels:
@@ -746,12 +757,14 @@ services:
       test:
         - CMD-SHELL
         - >-
-          node -e 'const fs=require("fs");const U="http://127.0.0.1:3000/health";const probe=async()=>{try{const r=await fetch(U,{signal:AbortSignal.timeout(8000)});return r.ok?0:2}catch(e){return 3}};(async()=>{let c=await probe();if(c===0)process.exit(0);await new Promise(function(r){setTimeout(r,3000)});c=await probe();if(c===0)process.exit(0);if(c!==2)process.exit(1);for(const p of fs.readdirSync("/proc")){if(!Number.isInteger(+p))continue;try{const a=fs.readFileSync("/proc/"+p+"/cmdline","utf8").split(String.fromCharCode(0)).filter(Boolean);if(a.length===2&&a[0].endsWith("node")&&a[1]==="dist/api.js"){console.log("browser dead, killing api server pid "+p);process.kill(+p,"SIGKILL")}}catch(e){}}process.exit(1)})()'
+          node -e 'const fs=require("fs"),S="/tmp/pw-hc.json",U="http://127.0.0.1:3000/health";const log=(m)=>{const l="[SELF-HEAL] "+new Date().toISOString()+" "+m+"\n";try{process.stderr.write(l)}catch(e){}try{fs.appendFileSync("/proc/1/fd/2",l)}catch(e){}};const s0=fs.readFileSync("/proc/1/stat","utf8");const rest=s0.slice(s0.lastIndexOf(String.fromCharCode(41))+2).split(" ");const boot=rest[19]||"0";let st={b:boot,ok:0,f:0,sat:0};try{const d=JSON.parse(fs.readFileSync(S,"utf8"));if(d.b===boot)st=d}catch(e){}const save=()=>{try{fs.writeFileSync(S,JSON.stringify(st))}catch(e){}};(async()=>{let ok=false,sat=false,why="";try{const r=await fetch(U,{signal:AbortSignal.timeout(8000)});let j={};try{j=await r.json()}catch(e){}if(r.ok){ok=true;sat=(typeof j.activePages==="number"&&typeof j.maxConcurrentPages==="number"&&j.maxConcurrentPages>0&&j.activePages>=j.maxConcurrentPages)}else{why="http "+r.status+" "+(j.error||"")}}catch(e){why="probe error: "+String(e&&e.message||e)}if(ok){st.ok=1;st.f=0;st.sat=sat?((st.sat||0)+1):0;save();if(st.sat<6)process.exit(0);why="pageSemaphore stuck at max for "+st.sat+" checks"}else{st.f=(st.f||0)+1;save();if(!st.ok||st.f<3)process.exit(1);why=why+" (fails="+st.f+")"}let k=0;for(const p of fs.readdirSync("/proc")){const n=+p;if(!Number.isInteger(n)||n===1||n===process.pid)continue;try{const a=fs.readFileSync("/proc/"+p+"/cmdline","utf8").split(String.fromCharCode(0)).filter(Boolean);if(a.length>=2&&a[0].endsWith("node")&&a.some(function(x){return x==="dist/api.js"||x.endsWith("/dist/api.js")})){log("playwright self-heal: "+why+"; killing api.js pid "+n);process.kill(n,"SIGKILL");k++}}catch(e){}}if(!k)log("playwright self-heal wanted ("+why+") but no dist/api.js process found");process.exit(1)})()'
       interval: 30s
-      timeout: 30s
+      timeout: 15s
       retries: 4
       start_period: 60s
+      start_interval: 5s
     image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/playwright-service@sha256:637fb8c8399634b02c2179da72566ce11644435e5d93e895bdbde4b1f9b0882a
+    init: true
     logging:
       driver: json-file
       options:

@@ -6,6 +6,8 @@ services:
   playwright-service:
     image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/playwright-service:latest
     build: !reset null
+    # tini 做 PID 1：回收 Chromium 崩溃后被过继的孤儿 renderer 僵尸进程。
+    init: true
     restart: unless-stopped
     ports:
       - "3031:3000"
@@ -29,16 +31,17 @@ services:
       test:
         - CMD-SHELL
         - >-
-          node -e 'const fs=require("fs");const U="http://127.0.0.1:3000/health";const probe=async()=>{try{const r=await fetch(U,{signal:AbortSignal.timeout(8000)});return r.ok?0:2}catch(e){return 3}};(async()=>{let c=await probe();if(c===0)process.exit(0);await new Promise(function(r){setTimeout(r,3000)});c=await probe();if(c===0)process.exit(0);if(c!==2)process.exit(1);for(const p of fs.readdirSync("/proc")){if(!Number.isInteger(+p))continue;try{const a=fs.readFileSync("/proc/"+p+"/cmdline","utf8").split(String.fromCharCode(0)).filter(Boolean);if(a.length===2&&a[0].endsWith("node")&&a[1]==="dist/api.js"){console.log("browser dead, killing api server pid "+p);process.kill(+p,"SIGKILL")}}catch(e){}}process.exit(1)})()'
+          node -e 'const fs=require("fs"),S="/tmp/pw-hc.json",U="http://127.0.0.1:3000/health";const log=(m)=>{const l="[SELF-HEAL] "+new Date().toISOString()+" "+m+"\n";try{process.stderr.write(l)}catch(e){}try{fs.appendFileSync("/proc/1/fd/2",l)}catch(e){}};const s0=fs.readFileSync("/proc/1/stat","utf8");const rest=s0.slice(s0.lastIndexOf(String.fromCharCode(41))+2).split(" ");const boot=rest[19]||"0";let st={b:boot,ok:0,f:0,sat:0};try{const d=JSON.parse(fs.readFileSync(S,"utf8"));if(d.b===boot)st=d}catch(e){}const save=()=>{try{fs.writeFileSync(S,JSON.stringify(st))}catch(e){}};(async()=>{let ok=false,sat=false,why="";try{const r=await fetch(U,{signal:AbortSignal.timeout(8000)});let j={};try{j=await r.json()}catch(e){}if(r.ok){ok=true;sat=(typeof j.activePages==="number"&&typeof j.maxConcurrentPages==="number"&&j.maxConcurrentPages>0&&j.activePages>=j.maxConcurrentPages)}else{why="http "+r.status+" "+(j.error||"")}}catch(e){why="probe error: "+String(e&&e.message||e)}if(ok){st.ok=1;st.f=0;st.sat=sat?((st.sat||0)+1):0;save();if(st.sat<6)process.exit(0);why="pageSemaphore stuck at max for "+st.sat+" checks"}else{st.f=(st.f||0)+1;save();if(!st.ok||st.f<3)process.exit(1);why=why+" (fails="+st.f+")"}let k=0;for(const p of fs.readdirSync("/proc")){const n=+p;if(!Number.isInteger(n)||n===1||n===process.pid)continue;try{const a=fs.readFileSync("/proc/"+p+"/cmdline","utf8").split(String.fromCharCode(0)).filter(Boolean);if(a.length>=2&&a[0].endsWith("node")&&a.some(function(x){return x==="dist/api.js"||x.endsWith("/dist/api.js")})){log("playwright self-heal: "+why+"; killing api.js pid "+n);process.kill(n,"SIGKILL");k++}}catch(e){}}if(!k)log("playwright self-heal wanted ("+why+") but no dist/api.js process found");process.exit(1)})()'
       interval: 30s
-      timeout: 30s
+      timeout: 15s
       retries: 4
       start_period: 60s
-
+      start_interval: 5s
   api:
     image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/firecrawl
     build: !reset null
     restart: unless-stopped
+    init: true
     container_name: firecrawl
     networks:
       - reverse-proxy
@@ -53,6 +56,10 @@ services:
       # PDF 走容器内原生 Rust 提取（firecrawl-rs 已在镜像内），复杂排版质量优于
       # pdf-parse 兜底；扫描件 fast 模式会明确报 OCR-required。
       PDF_RUST_EXTRACT_ENABLE: ${PDF_RUST_EXTRACT_ENABLE:-true}
+      # libuv 线程池扩容：USE_GO_MARKDOWN_PARSER 的 koffi .async 走 uv_queue_work，
+      # 默认 4 线程在并发 4 个大页转换时会被占满，连带把 dns.lookup / fs 一起饿死，
+      # 反过来把探针拖超时造成误杀。
+      UV_THREADPOOL_SIZE: ${UV_THREADPOOL_SIZE:-16}
       # HTML→Markdown 走镜像内置的 Go 解析器（koffi 的 .async，跑在 libuv 线程池，
       # 不占 Node 主事件循环）。上游无默认值、SELF_HOST 文档也未提及，不设就只有
       # 纯 JS Turndown 兜底：3 MB 级大表页在主线程同步转换实测 100% CPU 长时间
@@ -95,20 +102,25 @@ services:
       test:
         - CMD-SHELL
         - >-
-          curl -fsS -m 5 http://127.0.0.1:3002/v0/health/readiness >/dev/null 2>&1
-          && { touch /tmp/api-hc-ok; rm -f /tmp/api-hc-fail; exit 0; };
-          n=$$(( $$(cat /tmp/api-hc-fail 2>/dev/null || echo 0) + 1 ));
-          echo "$$n" > /tmp/api-hc-fail;
-          if [ -f /tmp/api-hc-ok ] && [ "$$n" -ge 3 ]; then
-            echo "api unresponsive for $$n consecutive healthchecks; killing api to force container restart" >&2;
-            pkill -KILL -f '^node dist/src/index\.js$$';
+          curl -fsS -m 8 http://127.0.0.1:3002/v0/health/readiness >/dev/null 2>&1
+          && { touch /tmp/api-hc-ok 2>/dev/null || true; rm -f /tmp/api-hc-fail 2>/dev/null || true; exit 0; };
+          n=$$(cat /tmp/api-hc-fail 2>/dev/null);
+          n=$$(( $${n:-0} + 1 ));
+          echo "$$n" > /tmp/api-hc-fail 2>/dev/null || n=4;
+          if [ -f /tmp/api-hc-ok ] && [ "$$n" -ge 4 ]; then
+            m="[SELF-HEAL] $$(date -Iseconds) api unresponsive for $$n checks; killing node dist/src tree";
+            echo "$$m" >&2;
+            echo "$$m" >> /proc/1/fd/2 2>/dev/null || true;
+            pkill -TERM -f '^node dist/src/harness\.js' 2>/dev/null || true;
+            sleep 2;
+            pkill -KILL -f '^node dist/src/' 2>/dev/null || true;
           fi;
           exit 1
       interval: 30s
-      timeout: 10s
-      retries: 3
+      timeout: 20s
+      retries: 5
       start_period: 120s
-
+      start_interval: 5s
   redis:
     image: ${JCR_REGISTRY:-docker.io}${JCR_REGISTRY:+/docker}/redis:alpine
     restart: unless-stopped
@@ -721,19 +733,22 @@ services:
         - CMD-SHELL
         - >-
           timeout 5 wget -q -T 5 -O /dev/null http://127.0.0.1:3000/health
-          && { touch /tmp/mcp-hc-ok; rm -f /tmp/mcp-hc-fail; exit 0; };
+          && { touch /tmp/mcp-hc-ok 2>/dev/null || true; rm -f /tmp/mcp-hc-fail 2>/dev/null || true; exit 0; };
           n=$$(cat /tmp/mcp-hc-fail 2>/dev/null);
           n=$$(( $${n:-0} + 1 ));
-          echo "$$n" > /tmp/mcp-hc-fail;
+          echo "$$n" > /tmp/mcp-hc-fail 2>/dev/null || n=3;
           if [ -f /tmp/mcp-hc-ok ] && [ "$$n" -ge 3 ]; then
-            echo "mcp unresponsive for $$n consecutive healthchecks; killing node to force container restart" >&2;
+            m="[SELF-HEAL] $$(date -Iseconds) mcp unresponsive for $$n checks; killing node";
+            echo "$$m" >&2;
+            echo "$$m" >> /proc/1/fd/2 2>/dev/null || true;
             pkill -KILL -f '^node /tmp/app-root/dist/index\.js$$';
           fi;
           exit 1
       interval: 30s
-      timeout: 10s
+      timeout: 15s
       retries: 4
       start_period: 60s
+      start_interval: 2s
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=reverse-proxy"
