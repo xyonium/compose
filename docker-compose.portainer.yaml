@@ -19,14 +19,21 @@ services:
     # 实测：页面超时 / 并发 10 个重页面 / 杀掉 renderer 都能自行恢复，只有整只浏览器
     # 消失才会卡死，所以这里只针对该状态下手。
     # 容器内没有 curl/pkill/ps，只有 node → 用 node 的 fetch 探上游自带的 /health
-    # （真 readiness：会新建 context+page 再关掉），连探两次都失败才 kill 服务进程；
+    # （真 readiness：会新建 context+page 再关掉）；
     # 杀的是 `node dist/api.js` 子进程（PID 1 是 pnpm，不受 PID-1 免疫影响，子进程
     # 一死 pnpm 退出、容器由 restart 策略拉起 —— 已实测）。
-    # 不在单次失败上动手：两次探测间隔 3s，规避偶发抖动；也免掉跨重启的 marker 状态。
-    # **且只在拿到 HTTP 503（浏览器已死的签名）时才杀**：连接被拒=还没监听（冷启动）、
-    # 超时=事件循环卡住，这两种一律不动手。首版没有这个区分，2026-11-08 部署时
-    # 真的在冷启动阶段把自己杀了（health 日志 "killing api server pid 215"
-    # 紧跟在 4 次 exit=1 之后），故补此门。
+    # 防误杀/防漏杀（2026-11-08 二轮评审整改）：
+    # - 单次检查只探 1 次（旧版在同一个检查里隔 3s 连探两次就动手，架空了 retries，
+    #   负载抖动时容易误杀在途请求）。
+    # - 计数靠状态文件 + `/proc/1/stat` 的启动戳绑定：容器重启后 starttime 必变，
+    #   旧状态自动失效，因此不必改 command 去清 marker。
+    # - 冷启动绝对安全：`ok` 未置位前（本容器从未成功过）任何失败都只 exit 1。
+    # - 超时/挂死也纳入自愈：连续 3 个周期失败（无论 503 还是 8s 超时）即动手。
+    # - 额外判 pageSemaphore 泄漏：/health 不走信号量，若 activePages 连续 6 个周期
+    #   顶满 maxConcurrentPages（上游 /scrape 的 finally 里 page.close() 抛错会跳过
+    #   release），说明抓取通道已死而 /health 仍 200，此时同样自愈。
+    # - 自愈原因写 /proc/1/fd/2 → 直接进 docker logs（实测），不再只存在
+    #   .State.Health.Log 那个只留 5 条的环形缓冲里。
     healthcheck:
       test:
         - CMD-SHELL
@@ -93,10 +100,14 @@ services:
     # 于是 harness 的 exit 监听和 restart: unless-stopped 全都不触发——容器一直
     # "Up" 而 :3002 从 TCP 握手到首字节永远没回应，只有人工重启才能恢复。
     # 这里探上游自带的只读心跳（/v0/health/readiness，实测 2-3 ms，纯 liveness，
-    # 不查依赖），连续 3 次失败「且本容器此前健康过」就 KILL 掉 api 子进程：
-    # harness 感知子进程退出后走 gracefulShutdown 退出容器，restart 策略拉起全套。
-    # 两个 marker 文件在上面的 command 开头清掉，所以冷启动（从未 healthy 过）
-    # 绝不会误杀；start_period 再给足冷启动窗口。
+    # 不查依赖），连续 4 次失败「且本容器此前健康过」就 SIGTERM harness、2 秒后
+    # `pkill -KILL -f '^node dist/src/'` 杀整棵 node 树 —— 只杀 index.js 不够：
+    # 上游 harness 在生产模式（IS_DEV=false）terminateProcess 只发 SIGTERM、没有
+    # SIGKILL 兜底，任一 worker 不响应就会永远退不出容器（实测进程树是
+    # harness + index + 9 个 worker）。node 树全死 → 容器退出 → restart 策略拉起全套。
+    # marker 文件在 command 开头清掉，所以冷启动（从未 healthy 过）绝不会误杀；
+    # start_period 给足冷启动窗口，start_interval 让重启后几秒就判回 healthy
+    # （traefik 会把非 healthy 容器摘流，这段越短越好）。
     # 注意 $$ 是 compose 部署期插值的转义，部署后容器看到的是单个 $。
     healthcheck:
       test:

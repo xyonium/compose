@@ -103,6 +103,42 @@
 **注意**：不要把 `healthcheck` 改成只"标 unhealthy"就完事——Docker 原生**不会**重启 unhealthy
 容器，必须由检查自身杀掉进程才能触发 `restart` 策略。
 
+### traefik 会把「非 healthy」的容器直接摘流（含 `starting`）
+
+这条是 2026-11-08 实测确认的，直接决定了自愈的时间预算：造一个 healthcheck 恒失败的容器，
+traefik 日志里立刻出现
+
+```
+Filtering unhealthy or starting container container=hcprobe-...
+```
+
+也就是说 `starting` 与 `unhealthy` 一视同仁，单副本下路由器连 Service 一起被摘，外部拿到的是
+**404**。而 Docker 在没配 `start_interval` 时，容器重启后要**等满一个 `interval`** 才跑第一次探针——
+换句话说，一次自愈重启会换来 ~30s 的硬断流。
+
+对策：三个服务都配 `start_interval`（api 5s / mcp 2s / playwright 5s），重启后几秒就能判回
+`healthy`。实测重启后的 `starting` 窗口从 ≥30s 压到 ≤15s（轮询粒度 15s，实际更短）。
+
+### 三个探针的最终形态
+
+| 服务 | 探什么 | 何时动手 | 副作用/注意事项 |
+|---|---|---|---|
+| `api` | `GET /v0/health/readiness`（8s 超时） | 连续 **4** 次失败且曾健康过 | `SIGTERM` harness → 2s → `pkill -KILL -f '^node dist/src/'` 杀**整棵树** |
+| `firecrawl-mcp` | `GET /health`（busybox wget，外层 `timeout 5`） | 连续 **3** 次失败且曾健康过 | `pkill` node；PID 1 是 tini（`init: true`） |
+| `playwright-service` | `GET /health`（node fetch，8s 超时） | 连续 **3** 个周期失败（503 **或** 超时）且曾健康过；或 `activePages` 连续 6 个周期顶满 | 状态文件 `/tmp/pw-hc.json`，用 `/proc/1/stat` 启动戳失效 |
+
+三条共同的坑（都踩过）：
+
+1. **只杀 `index.js` 不够**（api）：上游 harness 在生产模式（`IS_DEV=false`）的 `terminateProcess`
+   只发 SIGTERM、**没有 SIGKILL 兜底**，任一 worker 不响应，容器就永远退不出——自愈反而制造
+   了"既不响应也不重启"的死锁。所以必须杀 `node dist/src/` 全树。
+2. **不能用空文件驱动计数**：`n=$(( $(cat 空文件 || echo 0) + 1 ))` 在 dash 下得到 1 而不是报错，
+   计数永远卡住（实测 `dash 空文件 -> n=1`）。满盘（ENOSPC）正好是这个形态，自愈会静默失效。
+   改成两步 `${n:-0}`，并 `|| n=<阈值>`：写不进就直接放行杀。
+3. **自愈原因必须落进 `docker logs`**：`.State.Health.Log` 是只留 **5 条**的环形缓冲
+   （三容器实测 `entries=5`），自杀重启 2.5 分钟后死因就被覆盖。三个探针都改成追加写
+   `/proc/1/fd/2`，实测能在 `docker logs` 里看到带时间戳的 `[SELF-HEAL] ...` 行。
+
 ### mcp 的自愈，以及「PID 1 免疫 SIGKILL」这个坑
 
 `firecrawl-mcp` 也挂了同款自愈：探 FastMCP 自带的 `GET /health`（实测 200，且**豁免**
@@ -121,8 +157,9 @@ docker exec <c> kill -KILL 1   →  rc=0，容器仍然 running
 
 另外两个刻意的选择（都不显眼但有用）：
 
-- **`retries: 4` > 自杀阈值 3**：第 3 次失败时就杀掉进程走重启，不让 Docker 先标 `unhealthy`。
-  traefik 的 Docker provider 会把 `unhealthy` 容器从后端摘掉，单副本下那等于直接断服务。
+- **`retries` > 自杀阈值**（mcp 4>3，api 5>4）：让进程先被杀掉走重启，而不是先被 Docker 标成
+  `unhealthy`。虽然 traefik 对 `starting` 同样摘流（见上），但少一次 `unhealthy` 事件能避免
+  Arcane 的部署巡检误判断言失败。
 - **探 `GET /health` 而不是 `POST /mcp`**：两者共用同一个 `http.Server` 与事件循环，对"事件
   循环锁死"的检出率相同；但 `/health` 不耦合 MCP 协议头与鉴权，改协议不会把自愈变成自杀循环。
 
