@@ -9,6 +9,27 @@ services:
     restart: unless-stopped
     ports:
       - "3031:3000"
+    # 浏览器级假死自愈（2026-11-08）。本服务把 Chromium 句柄存成模块级全局，
+    # initializeBrowser() 只在 !browser 时调用，且没有 browser.on("disconnected")
+    # 或把 browser 置回 undefined 的路径 —— 一旦 Chromium 主进程消失（OOM 或内部崩溃），
+    # 句柄永远 stale，之后每次 newContext 都抛 TargetClosedError：/health 503、
+    # /scrape 500，而 Node 进程还活着 → 容器不退出、restart 策略不触发，永久降级。
+    # 实测：页面超时 / 并发 10 个重页面 / 杀掉 renderer 都能自行恢复，只有整只浏览器
+    # 消失才会卡死，所以这里只针对该状态下手。
+    # 容器内没有 curl/pkill/ps，只有 node → 用 node 的 fetch 探上游自带的 /health
+    # （真 readiness：会新建 context+page 再关掉），连探两次都失败才 kill 服务进程；
+    # 杀的是 `node dist/api.js` 子进程（PID 1 是 pnpm，不受 PID-1 免疫影响，子进程
+    # 一死 pnpm 退出、容器由 restart 策略拉起 —— 已实测）。
+    # 不在单次失败上动手：两次探测间隔 3s，规避偶发抖动；也免掉跨重启的 marker 状态。
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e 'fetch("http://127.0.0.1:3000/health",{signal:AbortSignal.timeout(8000)}).then(function(r){process.exit(r.ok?0:1)}).catch(function(){process.exit(1)})' && exit 0; sleep 3; node -e 'fetch("http://127.0.0.1:3000/health",{signal:AbortSignal.timeout(8000)}).then(function(r){process.exit(r.ok?0:1)}).catch(function(){process.exit(1)})' && exit 0; node -e 'const fs=require("fs");for(const p of fs.readdirSync("/proc")){if(!Number.isInteger(+p))continue;try{const a=fs.readFileSync("/proc/"+p+"/cmdline","utf8").split(String.fromCharCode(0)).filter(Boolean);if(a.length===2&&a[0].endsWith("node")&&a[1]==="dist/api.js"){console.log("killing api server pid "+p);process.kill(+p,"SIGKILL")}}catch(e){}}'; exit 1
+      interval: 30s
+      timeout: 30s
+      retries: 4
+      start_period: 60s
 
   api:
     image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/firecrawl

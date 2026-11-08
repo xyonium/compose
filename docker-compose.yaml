@@ -742,6 +742,15 @@ services:
       PROXY_PASSWORD: ${PROXY_PASSWORD}
       PROXY_SERVER: ${PROXY_SERVER}
       PROXY_USERNAME: ${PROXY_USERNAME}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e 'fetch("http://127.0.0.1:3000/health",{signal:AbortSignal.timeout(8000)}).then(function(r){process.exit(r.ok?0:1)}).catch(function(){process.exit(1)})' && exit 0; sleep 3; node -e 'fetch("http://127.0.0.1:3000/health",{signal:AbortSignal.timeout(8000)}).then(function(r){process.exit(r.ok?0:1)}).catch(function(){process.exit(1)})' && exit 0; node -e 'const fs=require("fs");for(const p of fs.readdirSync("/proc")){if(!Number.isInteger(+p))continue;try{const a=fs.readFileSync("/proc/"+p+"/cmdline","utf8").split(String.fromCharCode(0)).filter(Boolean);if(a.length===2&&a[0].endsWith("node")&&a[1]==="dist/api.js"){console.log("killing api server pid "+p);process.kill(+p,"SIGKILL")}}catch(e){}}'; exit 1
+      interval: 30s
+      timeout: 30s
+      retries: 4
+      start_period: 60s
     image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/playwright-service@sha256:637fb8c8399634b02c2179da72566ce11644435e5d93e895bdbde4b1f9b0882a
     logging:
       driver: json-file
