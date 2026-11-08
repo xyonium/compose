@@ -67,6 +67,10 @@ services:
       # 默认 4 线程在并发 4 个大页转换时会被占满，连带把 dns.lookup / fs 一起饿死，
       # 反过来把探针拖超时造成误杀。
       UV_THREADPOOL_SIZE: ${UV_THREADPOOL_SIZE:-16}
+      # worker 数量与起始端口：harness 用它们起进程/排端口，健康检查也用它们推导扫描范围，
+      # 两者必须同源，否则改一个就脱钩（改起始端口会让探针扫不到任何 worker → 重启循环）。
+      NUQ_WORKER_START_PORT: ${NUQ_WORKER_START_PORT:-3006}
+      NUQ_WORKER_COUNT: ${NUQ_WORKER_COUNT:-5}
       # HTML→Markdown 走镜像内置的 Go 解析器（koffi 的 .async，跑在 libuv 线程池，
       # 不占 Node 主事件循环）。上游无默认值、SELF_HOST 文档也未提及，不设就只有
       # 纯 JS Turndown 兜底：3 MB 级大表页在主线程同步转换实测 100% CPU 长时间
@@ -114,15 +118,15 @@ services:
         - CMD-SHELL
         - >-
           curl -fsS -m 8 http://127.0.0.1:3002/v0/health/readiness >/dev/null 2>&1
-          && { w=0;
-               for p in 3006 3007 3008 3009 3010 3011 3012; do curl -fsS -m 2 http://127.0.0.1:$$p/health >/dev/null 2>&1 && { w=1; break; }; done;
+          && { w=0; ws=${NUQ_WORKER_START_PORT:-3006}; wn=${NUQ_WORKER_COUNT:-5}; [ "$$wn" -gt 15 ] && wn=15; wi=0;
+               while [ "$$wi" -lt "$$wn" ]; do p=$$((ws+wi)); curl -fsS -m 2 http://127.0.0.1:$$p/health >/dev/null 2>&1 && { w=1; break; }; wi=$$((wi+1)); done;
                [ "$$w" = "1" ] && { touch /tmp/api-hc-ok 2>/dev/null || true; rm -f /tmp/api-hc-fail 2>/dev/null || true; exit 0; };
              };
           n=$$(cat /tmp/api-hc-fail 2>/dev/null);
           n=$$(( $${n:-0} + 1 ));
           echo "$$n" > /tmp/api-hc-fail 2>/dev/null || n=4;
           if [ -f /tmp/api-hc-ok ] && [ "$$n" -ge 4 ]; then
-            m="[SELF-HEAL] $$(date -Iseconds) api/worker unresponsive for $$n checks; killing node dist/src tree";
+            m="[SELF-HEAL] $$(date -Iseconds) api/workers unresponsive for $$n checks; killing node dist/src tree";
             echo "$$m" >&2;
             echo "$$m" >> /proc/1/fd/2 2>/dev/null || true;
             pkill -TERM -f '^node dist/src/harness\.js' 2>/dev/null || true;
