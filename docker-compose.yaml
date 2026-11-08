@@ -85,12 +85,15 @@ services:
         - CMD-SHELL
         - >-
           curl -fsS -m 8 http://127.0.0.1:3002/v0/health/readiness >/dev/null 2>&1
-          && { touch /tmp/api-hc-ok 2>/dev/null || true; rm -f /tmp/api-hc-fail 2>/dev/null || true; exit 0; };
+          && { w=0;
+               for p in 3006 3007 3008 3009 3010 3011 3012; do curl -fsS -m 2 http://127.0.0.1:$$p/health >/dev/null 2>&1 && { w=1; break; }; done;
+               [ "$$w" = "1" ] && { touch /tmp/api-hc-ok 2>/dev/null || true; rm -f /tmp/api-hc-fail 2>/dev/null || true; exit 0; };
+             };
           n=$$(cat /tmp/api-hc-fail 2>/dev/null);
           n=$$(( $${n:-0} + 1 ));
           echo "$$n" > /tmp/api-hc-fail 2>/dev/null || n=4;
           if [ -f /tmp/api-hc-ok ] && [ "$$n" -ge 4 ]; then
-            m="[SELF-HEAL] $$(date -Iseconds) api unresponsive for $$n checks; killing node dist/src tree";
+            m="[SELF-HEAL] $$(date -Iseconds) api/worker unresponsive for $$n checks; killing node dist/src tree";
             echo "$$m" >&2;
             echo "$$m" >> /proc/1/fd/2 2>/dev/null || true;
             pkill -TERM -f '^node dist/src/harness\.js' 2>/dev/null || true;
@@ -99,7 +102,7 @@ services:
           fi;
           exit 1
       interval: 30s
-      timeout: 20s
+      timeout: 45s
       retries: 5
       start_period: 120s
       start_interval: 5s

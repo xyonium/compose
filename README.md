@@ -123,9 +123,17 @@ Filtering unhealthy or starting container container=hcprobe-...
 
 | 服务 | 探什么 | 何时动手 | 副作用/注意事项 |
 |---|---|---|---|
-| `api` | `GET /v0/health/readiness`（8s 超时） | 连续 **4** 次失败且曾健康过 | `SIGTERM` harness → 2s → `pkill -KILL -f '^node dist/src/'` 杀**整棵树** |
+| `api` | `GET /v0/health/readiness`（8s）+ 扫 worker 端口 3006–3012（每个 2s，**只要有一个应答就算过**） | 连续 **4** 次失败且曾健康过 | `SIGTERM` harness → 2s → `pkill -KILL -f '^node dist/src/'` 杀**整棵树** |
 | `firecrawl-mcp` | `GET /health`（busybox wget，外层 `timeout 5`） | 连续 **3** 次失败且曾健康过 | `pkill` node；PID 1 是 tini（`init: true`） |
 | `playwright-service` | `GET /health`（node fetch，8s 超时） | 连续 **3** 个周期失败（503 **或** 超时）且曾健康过；或 `activePages` 连续 6 个周期顶满 | 状态文件 `/tmp/pw-hc.json`，用 `/proc/1/stat` 启动戳失效 |
+
+**为什么 api 要扫 worker 端口、而且只要求"有一个活着"**：`/v0/health/readiness` 是空壳
+（上游源码里就是 `TODO`），worker 卡死时它照样 200。2026-11-08 实测：冻住 1 个 nuq-worker 后
+`:3006/health` 8 秒无响应，而 api 探针依旧 200、容器依旧 `healthy`——这种"一个 worker 卡死"
+本来是看不见的。但 5 个 nuq worker 是分摊干活的，冻 1 个还有 4 个在跑、队列 reconciler 还会
+把卡住的活重新派发，**为这个重启整个容器不划算**（会砍掉所有在途任务）。所以规则定为
+"**全都没应答才重启**"：worker 端口 3006–3012 里只要有一个回 200 就判健康。
+实测：冻 1 个 → 仍 exit 0 不重启；7 个全不通 → 第 4 次计数触发自愈。
 
 三条共同的坑（都踩过）：
 
