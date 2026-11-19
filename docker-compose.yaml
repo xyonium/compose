@@ -891,6 +891,7 @@ services:
       MCPO_API_KEY: ${MCPO_API_KEY:-}
       NCBI_API_KEY: ${NCBI_API_KEY:-}
       SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
+      SZLIB_URL: ${SZLIB_URL:-http://szlib-mcp:8765}
       TAVILY_BASE_URL: ${TAVILY_BASE_URL:-http://api-key-rotator:8788/tavily}
       UNPAYWALL_EMAIL: ${UNPAYWALL_EMAIL:-}
       ZENODO_ACCESS_TOKEN: ${ZENODO_ACCESS_TOKEN:-}
@@ -1011,6 +1012,7 @@ services:
     environment:
       GITHUB_TOKENS: ${GITHUB_TOKENS:-}
       MCPO_BASE_URL: ${MCPO_BASE_URL:-http://mcpo:8000}
+      PAPER_OPTIONAL_SOURCES: ${PAPER_OPTIONAL_SOURCES:-szlib}
       PAPER_SOURCES: ${PAPER_SOURCES:-arxiv,semantic,pubmed,openalex,crossref,europepmc,dblp,hal,pmc}
       PAPERS_BASE_URL: ${PAPERS_BASE_URL:-http://papers-service:3200}
       REACH_BASE_URL: ${REACH_BASE_URL:-http://mcpo:8000}
