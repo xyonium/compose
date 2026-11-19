@@ -39,16 +39,25 @@
 
 ```
 paper-search main  push tool.py
-  └─ .github/workflows/notify-compose.yml   (repository_dispatch: paper-search-updated)
-       └─ compose  .github/workflows/papers-service-image.yml
-            ├─ PAPER_SEARCH_REF = paper-search main 的 sha
-            ├─ 构建并 push ghcr.io/xyonium/firecrawl-papers-service
-            ├─ 冒烟：docker run 后 GET /healthz，toolVersion 必须等于该 sha 的 tool.py version
-            └─ 把新 digest 钉回 docker-compose.portainer.yaml（+ docker-compose.yaml 若命中）
+  └─ paper-search .github/workflows/notify-compose.yml
+       │  repository_dispatch: paper-search-updated
+       ▼
+     compose main .github/workflows/relay-paper-search-updated.yml
+       │  workflow_dispatch(ref: firecrawl)   ← repository_dispatch 只在默认分支匹配
+       ▼
+     compose firecrawl .github/workflows/papers-service-image.yml
+       ├─ PAPER_SEARCH_REF = paper-search main 的 sha
+       ├─ 构建并 push ghcr.io/xyonium/firecrawl-papers-service
+       ├─ 冒烟：docker run 后 GET /healthz，toolVersion 必须等于该 sha 的 tool.py version
+       └─ 把新 digest 钉回 docker-compose.portainer.yaml（+ docker-compose.yaml 若命中）
 ```
 
 - 前置：`paper-search` 仓库 secret `COMPOSE_DISPATCH_TOKEN`（fine-grained PAT，仅
   `xyonium/compose` 的 `contents: write`）。未配置时 notify 工作流只告警、不失败。
+- `repository_dispatch` 只匹配默认分支上的工作流，而构建工作流住在 firecrawl 分支，
+  所以 main 上有一跳中继（`relay-paper-search-updated.yml`，用 GITHUB_TOKEN 触发
+  firecrawl 的 workflow_dispatch）。**删掉中继会让 dispatch 静默无 run**（204 但
+  total_count=0，2026-11-19 实测）。
 - 无 PAT / 手动升级：Actions → **Build papers-service image** → Run workflow（ref: firecrawl）。
 - 旁路漂移检测（不需要 PAT）：镜像带 `org.xyonium.paper-search-ref` 标签，宿主机 cron 跑
   `scripts/check-paper-search-drift.sh`（0=一致，1=落后，2=无法判定），cron 行见脚本头部。

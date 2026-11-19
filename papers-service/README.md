@@ -85,6 +85,8 @@ paper-search-mcp 退役后承接 `download_paper_to_knowledge` 的 OA 兜底链�
 
 **tool.py 自动更新**：paper-search 仓库 push `tool.py` → 它的
 `.github/workflows/notify-compose.yml` 发 `repository_dispatch(paper-search-updated)` →
+compose main 的 `relay-paper-search-updated.yml` 中继成 `workflow_dispatch(ref: firecrawl)`
+（`repository_dispatch` 只在默认分支匹配，构建工作流在 firecrawl 分支）→
 本工作流重建（`PAPER_SEARCH_REF` 解析成 main 的 sha），冒烟 `/healthz` 的
 `toolVersion` 与 tool.py 的 version 一致后，才把新 digest 钉回 compose 文件。
 需要 paper-search 仓库 secret `COMPOSE_DISPATCH_TOKEN`（fine-grained PAT，
