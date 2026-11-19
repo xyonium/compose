@@ -67,9 +67,11 @@ paper-search main  push tool.py
 - 位置：`docker-compose.portainer.yaml` 的 `firecrawl-mcp.command`；启动时把 `/app` 拷到
   `/tmp/app-root`，对 `dist` 做替换后再 `exec`。改补丁只改 portainer，
   `docker-compose.yaml` 是 sync 生成物。
-- 2026-11-19 适配 3.37.0：gov 调用多了 `.catch`，gov 旁路改成**标记匹配**（只替换
-  `client.http.get(...)` 调用段，保留 `.catch` 链）；新增 `ALEXANDRIA_SEARCH_INSTRUCTIONS`
-  清空；补 `WARN patch drift` 自检（缺锚点只告警、不 crash；已打过的文件不误报）。
+- 2026-11-19 适配 3.37.0：gov 用**括号平衡扫描**定位调用段（支持嵌套/多参数，保留
+  `.catch` 链），fetch 里 `r.ok` 失败时构造 `err.response` 继续走 400→UserError；
+  `blankConst` 支持 `var|const|let`、引号感知；清空 4 个 `ALEXANDRIA_*` 常量、scrape 的
+  `alexandria` param 描述、带 `TERMS_GUIDANCE` 的整行；`WARN patch drift` 覆盖常量/
+  param/句子（缺锚点只告警、不 crash；已打过的不误报）。
 - 启动日志出现 `WARN patch drift` = 锚点又漂了：拉对应 digest 的镜像，按 main AGENTS 的
   mcp patch 双层验证清单更新，别只看 `Total patched`。
 - 改完 portainer 后跑 `sync-firecrawl`（`pin_mode=keep`）才会进 `docker-compose.yaml`。

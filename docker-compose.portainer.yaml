@@ -296,8 +296,9 @@ services:
         // without guessing where the string ends: scan to the first unquoted
         // semicolon, so prose semicolons and trailing statements survive.
         function blankConst(src, name) {
-          const start = src.indexOf("var " + name + " =");
-          if (start < 0) return src;
+          const match = new RegExp("(var|const|let) " + name + " =").exec(src);
+          if (!match) return src;
+          const start = match.index, keyword = match[1];
           let quote = "", i = start;
           for (; i < src.length; i++) {
             const ch = src[i];
@@ -311,7 +312,7 @@ services:
             }
           }
           if (i >= src.length) return src;
-          return src.slice(0, start) + "var " + name + " = \"\";" + src.slice(i + 1);
+          return src.slice(0, start) + keyword + " " + name + " = \"\";" + src.slice(i + 1);
         }
 
         const bang = "**SearXNG !bang:** prefix the query to pick a source category: !science (papers/academic), !it (programming), !general (default web), !news, !images. For academic or research queries ALWAYS prefix with !science instead of adding keywords like \"research paper\" to the query. Example: \"!science continuous glucose monitoring sensor accuracy\".";
@@ -558,9 +559,28 @@ services:
             const j = c.indexOf(govNeedle);
             const i = j >= 0 ? c.lastIndexOf(govStart, j) : -1;
             const k = j >= 0 ? c.indexOf(govTail, j) : -1;
-            const close = k >= 0 ? c.indexOf(")", k + govTail.length) : -1;
+            let close = -1;
+            if (i >= 0 && j > i && k > j) {
+              const open = c.indexOf("(", i + govStart.length - 1);
+              if (open >= 0) {
+                let depth = 0, quote = "";
+                for (let p = open; p < c.length; p++) {
+                  const ch = c[p];
+                  if (quote) {
+                    if (ch === "\\") { p++; continue; }
+                    if (ch === quote) quote = "";
+                  } else if (ch === "\x22" || ch === "\x27" || ch === backtick) {
+                    quote = ch;
+                  } else if (ch === "(") {
+                    depth++;
+                  } else if (ch === ")" && --depth === 0) {
+                    close = p; break;
+                  }
+                }
+              }
+            }
             if (i >= 0 && j > i && k > j && close > k) {
-              c = c.slice(0, i) + "const res = await fetch(\n        " + backtick + "$" + "{BASE2}?" + "$" + "{params.toString()}" + backtick + "\n      ).then(async (r) => ({ data: await r.json() }))" + c.slice(close + 1);
+              c = c.slice(0, i) + "const res = await fetch(\n        " + backtick + "$" + "{BASE2}?" + "$" + "{params.toString()}" + backtick + "\n      ).then(async (r) => {\n        const data = await r.json().catch(() => ({}));\n        if (!r.ok) {\n          const err = new Error(data.error || (\"gov http \" + r.status));\n          err.response = { status: r.status, data: data };\n          throw err;\n        }\n        return { data: data };\n      })" + c.slice(close + 1);
               modified = true; logs.push("gov-fetch-bypass");
             } else if (c.includes(govNeedle) && !c.includes(govFetchPrefix)) {
               warnings.push("gov-fetch-bypass: shape changed in " + f);
@@ -605,6 +625,24 @@ services:
             //     Older bundles lack it; blank the assignment line so every
             //     consumer degrades to an empty string.
             c = blankConst(c, "ALEXANDRIA_SEARCH_INSTRUCTIONS");
+            c = blankConst(c, "ALEXANDRIA_SEARCH_LEAD");
+            c = blankConst(c, "ALEXANDRIA_CONTRACT_GUIDANCE");
+            c = blankConst(c, "ALEXANDRIA_TERMS_GUIDANCE");
+
+            // 15a-3. 3.37.0 keeps a live scrape-description sentence that
+            //     interpolates the terms guidance; remove the whole line.
+            c = c.replace(
+              /With \\`alexandria\\` in place of \\`url\\`[^\n]*\n/,
+              ""
+            );
+
+            // 15a-4. 3.37.0 also keeps a live cloud-only description on the
+            //     scrape schema alexandria param; keep the param/schema but
+            //     blank the model-facing description string.
+            c = c.replace(
+              /(\n\s*alexandria: [^\n]*?\.optional\(\)\.describe\()[^]*?(\n\s*\),)/,
+              "$1\"\"$2"
+            );
 
             // 15b. FULL: capability-list opener -- drop monitoring and
             //     multi-source research wording (agent + monitor both off).
@@ -770,7 +808,11 @@ services:
         for (const f of walk("/tmp/app-root/dist")) {
           const c = fs.readFileSync(f, "utf8");
           if (c.includes("Keyless sessions get no Alexandria")) warnings.push("cloud-guidance remains in " + f);
-          if (c.includes("var ALEXANDRIA_SEARCH_INSTRUCTIONS") && !c.includes("var ALEXANDRIA_SEARCH_INSTRUCTIONS = \"\";")) warnings.push("alexandria-instructions remains in " + f);
+          for (const n of ["ALEXANDRIA_SEARCH_INSTRUCTIONS", "ALEXANDRIA_SEARCH_LEAD", "ALEXANDRIA_CONTRACT_GUIDANCE", "ALEXANDRIA_TERMS_GUIDANCE"]) {
+            if (new RegExp("(?:var|const|let) " + n + " = \"(?!\")").test(c)) warnings.push(n + " remains in " + f);
+          }
+          if (c.includes("catalogued provider capabilities instead of fetching a page")) warnings.push("alexandria-scrape-desc remains in " + f);
+          if (c.includes("Catalogued Alexandria capability invocation")) warnings.push("alexandria-param-desc remains in " + f);
         }
         if (warnings.length) console.log("WARN patch drift: " + warnings.join(", "));
         console.log("Total patched: " + n);
