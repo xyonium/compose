@@ -154,6 +154,28 @@ services:
 
         const backtick = "\x60";
 
+        // Replace a `var NAME = <expr>;` assignment with `var NAME = "";`
+        // without guessing where the string ends: scan to the first unquoted
+        // semicolon, so prose semicolons and trailing statements survive.
+        function blankConst(src, name) {
+          const start = src.indexOf("var " + name + " =");
+          if (start < 0) return src;
+          let quote = "", i = start;
+          for (; i < src.length; i++) {
+            const ch = src[i];
+            if (quote) {
+              if (ch === "\\") { i++; continue; }
+              if (ch === quote) quote = "";
+            } else if (ch === "\x22" || ch === "\x27" || ch === backtick) {
+              quote = ch;
+            } else if (ch === ";") {
+              break;
+            }
+          }
+          if (i >= src.length) return src;
+          return src.slice(0, start) + "var " + name + " = \"\";" + src.slice(i + 1);
+        }
+
         const bang = "**SearXNG !bang:** prefix the query to pick a source category: !science (papers/academic), !it (programming), !general (default web), !news, !images. For academic or research queries ALWAYS prefix with !science instead of adding keywords like \"research paper\" to the query. Example: \"!science continuous glucose monitoring sensor accuracy\".";
 
         const cleanDesc = "LLM-based cleaning pass that removes residual boilerplate (cookie banners, ads, social widgets, breadcrumbs, comments) that onlyMainContent misses. Preserves headings, lists, tables, code blocks, links. Can combine with onlyMainContent. Auto-skipped (preserving original) if content exceeds model token limit. Recommended to enable for complex structured websites when speed is not critical. If the returned content is unexpectedly short or seems to be missing key content, try disabling this option and re-scraping.";
@@ -444,10 +466,7 @@ services:
             //     SEARCH_PROFILE_INSTRUCTIONS and the search tool description).
             //     Older bundles lack it; blank the assignment line so every
             //     consumer degrades to an empty string.
-            c = c.replace(
-              /var ALEXANDRIA_SEARCH_INSTRUCTIONS = [^\n]*;/,
-              "var ALEXANDRIA_SEARCH_INSTRUCTIONS = \"\";"
-            );
+            c = blankConst(c, "ALEXANDRIA_SEARCH_INSTRUCTIONS");
 
             // 15b. FULL: capability-list opener -- drop monitoring and
             //     multi-source research wording (agent + monitor both off).
