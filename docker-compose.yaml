@@ -40,7 +40,6 @@ services:
       - HOST=0.0.0.0
       - LOGGING_LEVEL=${LOGGING_LEVEL}
       - MAX_CONCURRENT_JOBS=${MAX_CONCURRENT_JOBS:-5}
-      - MODEL_EMBEDDING_NAME=${MODEL_EMBEDDING_NAME}
       - MODEL_NAME=${MODEL_NAME}
       - NUM_WORKERS_PER_QUEUE=${NUM_WORKERS_PER_QUEUE:-8}
       - NUQ_BACKEND=${NUQ_BACKEND}
@@ -70,44 +69,39 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - TEST_API_KEY=${TEST_API_KEY}
       - USE_DB_AUTHENTICATION=${USE_DB_AUTHENTICATION:-false}
-      - USE_GO_MARKDOWN_PARSER=${USE_GO_MARKDOWN_PARSER:-true}
-      - UV_THREADPOOL_SIZE=${UV_THREADPOOL_SIZE:-16}
+      - WORKER_PORT=${WORKER_PORT:-3005}
       - NUQ_WORKER_COUNT=${NUQ_WORKER_COUNT:-5}
       - NUQ_WORKER_START_PORT=${NUQ_WORKER_START_PORT:-3006}
-      - WORKER_PORT=${WORKER_PORT:-3005}
       - PARSE_UPLOAD_REF_SECRET=${PARSE_UPLOAD_REF_SECRET:-}
       - PDF_RUST_EXTRACT_ENABLE=${PDF_RUST_EXTRACT_ENABLE:-true}
       - RESEARCH_PROXY_URL=http://research-proxy:3100
       - RUNPOD_MU_API_KEY=${RUNPOD_MU_API_KEY:-local}
       - RUNPOD_MU_POD_ID=${RUNPOD_MU_POD_ID:-local}
+      - USE_GO_MARKDOWN_PARSER=${USE_GO_MARKDOWN_PARSER:-true}
+      - UV_THREADPOOL_SIZE=${UV_THREADPOOL_SIZE:-16}
     extra_hosts:
       - host.docker.internal:host-gateway
     healthcheck:
+      interval: 30s
+      retries: 5
+      start_interval: 5s
+      start_period: 120s
       test:
         - CMD-SHELL
-        - >-
-          curl -fsS -m 8 http://127.0.0.1:3002/v0/health/readiness >/dev/null 2>&1
-          && { w=0; ws=${NUQ_WORKER_START_PORT:-3006}; wn=${NUQ_WORKER_COUNT:-5}; [ "$$wn" -gt 15 ] && wn=15; wi=0;
+        - |-
+          curl -fsS -m 8 http://127.0.0.1:3002/v0/health/readiness >/dev/null 2>&1 && { w=0; ws=${NUQ_WORKER_START_PORT:-3006}; wn=${NUQ_WORKER_COUNT:-5}; [ "$$wn" -gt 15 ] && wn=15; wi=0;
                while [ "$$wi" -lt "$$wn" ]; do p=$$((ws+wi)); curl -fsS -m 2 http://127.0.0.1:$$p/health >/dev/null 2>&1 && { w=1; break; }; wi=$$((wi+1)); done;
                [ "$$w" = "1" ] && { touch /tmp/api-hc-ok 2>/dev/null || true; rm -f /tmp/api-hc-fail 2>/dev/null || true; exit 0; };
              };
-          n=$$(cat /tmp/api-hc-fail 2>/dev/null);
-          n=$$(( $${n:-0} + 1 ));
-          echo "$$n" > /tmp/api-hc-fail 2>/dev/null || n=4;
-          if [ -f /tmp/api-hc-ok ] && [ "$$n" -ge 4 ]; then
+          n=$$(cat /tmp/api-hc-fail 2>/dev/null); n=$$(( $${n:-0} + 1 )); echo "$$n" > /tmp/api-hc-fail 2>/dev/null || n=4; if [ -f /tmp/api-hc-ok ] && [ "$$n" -ge 4 ]; then
             m="[SELF-HEAL] $$(date -Iseconds) api/workers unresponsive for $$n checks; killing node dist/src tree";
             echo "$$m" >&2;
             echo "$$m" >> /proc/1/fd/2 2>/dev/null || true;
             pkill -TERM -f '^node dist/src/harness\.js' 2>/dev/null || true;
             sleep 2;
             pkill -KILL -f '^node dist/src/' 2>/dev/null || true;
-          fi;
-          exit 1
-      interval: 30s
+          fi; exit 1
       timeout: 45s
-      retries: 5
-      start_period: 120s
-      start_interval: 5s
     image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/firecrawl@sha256:9197579f5d43770eae05c0f873bf7187ee9244b4dde124923e80c8ed4b07f1aa
     init: true
     labels:
@@ -164,7 +158,13 @@ services:
 
         const cleanDesc = "LLM-based cleaning pass that removes residual boilerplate (cookie banners, ads, social widgets, breadcrumbs, comments) that onlyMainContent misses. Preserves headings, lists, tables, code blocks, links. Can combine with onlyMainContent. Auto-skipped (preserving original) if content exceeds model token limit. Recommended to enable for complex structured websites when speed is not critical. If the returned content is unexpectedly short or seems to be missing key content, try disabling this option and re-scraping.";
 
+        // 2026-11-19: adapt to firecrawl-mcp 3.37.0. The gov call gained a
+        // trailing .catch; the gov bypass now replaces only the call span
+        // (marker-based) and warns if the shape changes. ALEXANDRIA_SEARCH_
+        // INSTRUCTIONS (new in 3.37.0) is blanked. Missing anchors are
+        // reported as "WARN patch drift", never fatal.
         let n = 0;
+        const warnings = [];
         for (const f of walk("/tmp/app-root/dist")) {
           let c = fs.readFileSync(f, "utf8");
           let modified = false;
@@ -386,12 +386,25 @@ services:
           //     single-quoted body per the sh transport rule; the two-char
           //     $$ form inside needles is compose-escape and lands as a
           //     single $ once compose interpolates.
-          if (c.includes("const res = await client.http.get(\n        " + backtick + "$" + "{BASE2}?" + "$" + "{params.toString()}" + backtick + ",\n        originHeaders(requestOrigin(mcpClient, session))\n      );")) {
-            c = c.replace(
-              "const res = await client.http.get(\n        " + backtick + "$" + "{BASE2}?" + "$" + "{params.toString()}" + backtick + ",\n        originHeaders(requestOrigin(mcpClient, session))\n      );",
-              "const res = await fetch(\n        " + backtick + "$" + "{BASE2}?" + "$" + "{params.toString()}" + backtick + "\n      ).then(async (r) => ({ data: await r.json() }));"
-            );
-            modified = true; logs.push("gov-fetch-bypass");
+          {
+            // Marker-based replacement: tolerate the 3.37.0 trailing .catch(...)
+            // and future whitespace changes; replace only the client.http.get(...)
+            // span and leave any .catch chain intact. If the needle is present
+            // but the call shape changed, warn instead of silently skipping.
+            const govStart = "const res = await client.http.get(";
+            const govNeedle = "$" + "{BASE2}?" + "$" + "{params.toString()}";
+            const govTail = "originHeaders(requestOrigin(mcpClient, session))";
+            const govFetchPrefix = "const res = await fetch(\n        " + backtick + govNeedle + backtick;
+            const j = c.indexOf(govNeedle);
+            const i = j >= 0 ? c.lastIndexOf(govStart, j) : -1;
+            const k = j >= 0 ? c.indexOf(govTail, j) : -1;
+            const close = k >= 0 ? c.indexOf(")", k + govTail.length) : -1;
+            if (i >= 0 && j > i && k > j && close > k) {
+              c = c.slice(0, i) + "const res = await fetch(\n        " + backtick + "$" + "{BASE2}?" + "$" + "{params.toString()}" + backtick + "\n      ).then(async (r) => ({ data: await r.json() }))" + c.slice(close + 1);
+              modified = true; logs.push("gov-fetch-bypass");
+            } else if (c.includes(govNeedle) && !c.includes(govFetchPrefix)) {
+              warnings.push("gov-fetch-bypass: shape changed in " + f);
+            }
           }
 
           // 15. Strip cloud-only guidance from FULL/KEYLESS profile
@@ -425,6 +438,15 @@ services:
             c = c.replace(
               /var ALEXANDRIA_SOURCES_ALWAYS_ON = [\x22\x27]Authenticated searches[^]*?website-matched tools only\.[\x22\x27]/,
               "var ALEXANDRIA_SOURCES_ALWAYS_ON = \"\""
+            );
+
+            // 15a-2. 3.37.0 added ALEXANDRIA_SEARCH_INSTRUCTIONS (prefix of
+            //     SEARCH_PROFILE_INSTRUCTIONS and the search tool description).
+            //     Older bundles lack it; blank the assignment line so every
+            //     consumer degrades to an empty string.
+            c = c.replace(
+              /var ALEXANDRIA_SEARCH_INSTRUCTIONS = [^\n]*;/,
+              "var ALEXANDRIA_SEARCH_INSTRUCTIONS = \"\";"
             );
 
             // 15b. FULL: capability-list opener -- drop monitoring and
@@ -588,6 +610,12 @@ services:
             console.log("Patched [" + logs.join(",") + "]: " + f);
           }
         }
+        for (const f of walk("/tmp/app-root/dist")) {
+          const c = fs.readFileSync(f, "utf8");
+          if (c.includes("Keyless sessions get no Alexandria")) warnings.push("cloud-guidance remains in " + f);
+          if (c.includes("var ALEXANDRIA_SEARCH_INSTRUCTIONS") && !c.includes("var ALEXANDRIA_SEARCH_INSTRUCTIONS = \"\";")) warnings.push("alexandria-instructions remains in " + f);
+        }
+        if (warnings.length) console.log("WARN patch drift: " + warnings.join(", "));
         console.log("Total patched: " + n);
         ' && exec node /tmp/app-root/dist/index.js
     container_name: firecrawl-mcp
@@ -608,26 +636,20 @@ services:
     expose:
       - "3000"
     healthcheck:
+      interval: 30s
+      retries: 4
+      start_interval: 2s
+      start_period: 60s
       test:
         - CMD-SHELL
-        - >-
-          timeout 5 wget -q -T 5 -O /dev/null http://127.0.0.1:3000/health
-          && { touch /tmp/mcp-hc-ok 2>/dev/null || true; rm -f /tmp/mcp-hc-fail 2>/dev/null || true; exit 0; };
-          n=$$(cat /tmp/mcp-hc-fail 2>/dev/null);
-          n=$$(( $${n:-0} + 1 ));
-          echo "$$n" > /tmp/mcp-hc-fail 2>/dev/null || n=3;
-          if [ -f /tmp/mcp-hc-ok ] && [ "$$n" -ge 3 ]; then
+        - |-
+          timeout 5 wget -q -T 5 -O /dev/null http://127.0.0.1:3000/health && { touch /tmp/mcp-hc-ok 2>/dev/null || true; rm -f /tmp/mcp-hc-fail 2>/dev/null || true; exit 0; }; n=$$(cat /tmp/mcp-hc-fail 2>/dev/null); n=$$(( $${n:-0} + 1 )); echo "$$n" > /tmp/mcp-hc-fail 2>/dev/null || n=3; if [ -f /tmp/mcp-hc-ok ] && [ "$$n" -ge 3 ]; then
             m="[SELF-HEAL] $$(date -Iseconds) mcp unresponsive for $$n checks; killing node";
             echo "$$m" >&2;
             echo "$$m" >> /proc/1/fd/2 2>/dev/null || true;
             pkill -KILL -f '^node /tmp/app-root/dist/index\.js$$';
-          fi;
-          exit 1
-      interval: 30s
+          fi; exit 1
       timeout: 15s
-      retries: 4
-      start_period: 60s
-      start_interval: 2s
     image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/firecrawl-mcp-server@sha256:f0a646f93dc1c06b2620111a69051c123643f6a2a3cb526e8b1a28d255d103db
     init: true
     labels:
@@ -759,15 +781,14 @@ services:
       PROXY_SERVER: ${PROXY_SERVER}
       PROXY_USERNAME: ${PROXY_USERNAME}
     healthcheck:
+      interval: 30s
+      retries: 4
+      start_interval: 5s
+      start_period: 60s
       test:
         - CMD-SHELL
-        - >-
-          node -e 'const fs=require("fs"),S="/tmp/pw-hc.json",U="http://127.0.0.1:3000/health";const log=(m)=>{const l="[SELF-HEAL] "+new Date().toISOString()+" "+m+"\n";try{process.stderr.write(l)}catch(e){}try{fs.appendFileSync("/proc/1/fd/2",l)}catch(e){}};const s0=fs.readFileSync("/proc/1/stat","utf8");const rest=s0.slice(s0.lastIndexOf(String.fromCharCode(41))+2).split(" ");const boot=rest[19]||"0";let st={b:boot,ok:0,f:0,sat:0};try{const d=JSON.parse(fs.readFileSync(S,"utf8"));if(d.b===boot)st=d}catch(e){}const save=()=>{try{fs.writeFileSync(S,JSON.stringify(st))}catch(e){}};(async()=>{let ok=false,sat=false,why="";try{const r=await fetch(U,{signal:AbortSignal.timeout(8000)});let j={};try{j=await r.json()}catch(e){}if(r.ok){ok=true;sat=(typeof j.activePages==="number"&&typeof j.maxConcurrentPages==="number"&&j.maxConcurrentPages>0&&j.activePages>=j.maxConcurrentPages)}else{why="http "+r.status+" "+(j.error||"")}}catch(e){why="probe error: "+String(e&&e.message||e)}if(ok){st.ok=1;st.f=0;st.sat=sat?((st.sat||0)+1):0;save();if(st.sat<6)process.exit(0);why="pageSemaphore stuck at max for "+st.sat+" checks"}else{st.f=(st.f||0)+1;save();if(!st.ok||st.f<3)process.exit(1);why=why+" (fails="+st.f+")"}let k=0;for(const p of fs.readdirSync("/proc")){const n=+p;if(!Number.isInteger(n)||n===1||n===process.pid)continue;try{const a=fs.readFileSync("/proc/"+p+"/cmdline","utf8").split(String.fromCharCode(0)).filter(Boolean);if(a.length>=2&&a[0].endsWith("node")&&a.some(function(x){return x==="dist/api.js"||x.endsWith("/dist/api.js")})){log("playwright self-heal: "+why+"; killing api.js pid "+n);process.kill(n,"SIGKILL");k++}}catch(e){}}if(!k)log("playwright self-heal wanted ("+why+") but no dist/api.js process found");process.exit(1)})()'
-      interval: 30s
+        - 'node -e ''const fs=require("fs"),S="/tmp/pw-hc.json",U="http://127.0.0.1:3000/health";const log=(m)=>{const l="[SELF-HEAL] "+new Date().toISOString()+" "+m+"\n";try{process.stderr.write(l)}catch(e){}try{fs.appendFileSync("/proc/1/fd/2",l)}catch(e){}};const s0=fs.readFileSync("/proc/1/stat","utf8");const rest=s0.slice(s0.lastIndexOf(String.fromCharCode(41))+2).split(" ");const boot=rest[19]||"0";let st={b:boot,ok:0,f:0,sat:0};try{const d=JSON.parse(fs.readFileSync(S,"utf8"));if(d.b===boot)st=d}catch(e){}const save=()=>{try{fs.writeFileSync(S,JSON.stringify(st))}catch(e){}};(async()=>{let ok=false,sat=false,why="";try{const r=await fetch(U,{signal:AbortSignal.timeout(8000)});let j={};try{j=await r.json()}catch(e){}if(r.ok){ok=true;sat=(typeof j.activePages==="number"&&typeof j.maxConcurrentPages==="number"&&j.maxConcurrentPages>0&&j.activePages>=j.maxConcurrentPages)}else{why="http "+r.status+" "+(j.error||"")}}catch(e){why="probe error: "+String(e&&e.message||e)}if(ok){st.ok=1;st.f=0;st.sat=sat?((st.sat||0)+1):0;save();if(st.sat<6)process.exit(0);why="pageSemaphore stuck at max for "+st.sat+" checks"}else{st.f=(st.f||0)+1;save();if(!st.ok||st.f<3)process.exit(1);why=why+" (fails="+st.f+")"}let k=0;for(const p of fs.readdirSync("/proc")){const n=+p;if(!Number.isInteger(n)||n===1||n===process.pid)continue;try{const a=fs.readFileSync("/proc/"+p+"/cmdline","utf8").split(String.fromCharCode(0)).filter(Boolean);if(a.length>=2&&a[0].endsWith("node")&&a.some(function(x){return x==="dist/api.js"||x.endsWith("/dist/api.js")})){log("playwright self-heal: "+why+"; killing api.js pid "+n);process.kill(n,"SIGKILL");k++}}catch(e){}}if(!k)log("playwright self-heal wanted ("+why+") but no dist/api.js process found");process.exit(1)})()'''
       timeout: 15s
-      retries: 4
-      start_period: 60s
-      start_interval: 5s
     image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/firecrawl/playwright-service@sha256:637fb8c8399634b02c2179da72566ce11644435e5d93e895bdbde4b1f9b0882a
     init: true
     logging:
@@ -874,7 +895,6 @@ x-common-env:
   FDB_CLUSTER_FILE: ${NUQ_BACKEND:+/var/fdb/fdb.cluster}
   LOGGING_LEVEL: ${LOGGING_LEVEL}
   MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-5}
-  MODEL_EMBEDDING_NAME: ${MODEL_EMBEDDING_NAME}
   MODEL_NAME: ${MODEL_NAME}
   NUM_WORKERS_PER_QUEUE: ${NUM_WORKERS_PER_QUEUE:-8}
   NUQ_BACKEND: ${NUQ_BACKEND}
