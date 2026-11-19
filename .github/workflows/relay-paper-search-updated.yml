@@ -1,0 +1,31 @@
+name: Relay paper-search-updated
+
+# paper-search 的 notify-compose.yml 发 repository_dispatch(paper-search-updated)。
+# GitHub 只在默认分支匹配 repository_dispatch 触发器，而 papers-service 的构建工作流
+# 住在 firecrawl 分支（push 触发要求工作流文件在被推送的分支上），所以这里做一跳中继：
+# 用 GITHUB_TOKEN 在 firecrawl 上触发 workflow_dispatch。构建实现仍然只有
+# papers-service-image.yml 一份。
+#
+# 没有这跳中继时，dispatch 会返回 204 但不会产生任何 run（2026-11-19 实测：total_count=0）。
+
+on:
+  repository_dispatch:
+    types: [paper-search-updated]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch Build papers-service image on firecrawl branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api -X POST \
+            repos/xyonium/compose/actions/workflows/papers-service-image.yml/dispatches \
+            -f ref=firecrawl
