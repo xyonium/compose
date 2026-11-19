@@ -171,6 +171,8 @@ services:
               quote = ch;
             } else if (ch === ";") {
               break;
+            } else if (ch === "\n") {
+              return src;
             }
           }
           if (i >= src.length) return src;
@@ -442,10 +444,10 @@ services:
               }
             }
             if (i >= 0 && j > i && k > j && close > k) {
-              c = c.slice(0, i) + "const res = await fetch(\n        " + backtick + "$" + "{BASE2}?" + "$" + "{params.toString()}" + backtick + "\n      ).then(async (r) => {\n        const data = await r.json().catch(() => ({}));\n        if (!r.ok) {\n          const err = new Error(data.error || (\"gov http \" + r.status));\n          err.response = { status: r.status, data: data };\n          throw err;\n        }\n        return { data: data };\n      })" + c.slice(close + 1);
+              c = c.slice(0, i) + "const res = await fetch(\n        " + backtick + "$" + "{BASE2}?" + "$" + "{params.toString()}" + backtick + "\n      ).then(async (r) => {\n        if (!r.ok) {\n          const data = await r.json().catch(() => ({}));\n          const err = new Error(data.error || (\"gov http \" + r.status));\n          err.response = { status: r.status, data: data };\n          throw err;\n        }\n        return { data: await r.json() };\n      })" + c.slice(close + 1);
               modified = true; logs.push("gov-fetch-bypass");
-            } else if (c.includes(govNeedle) && !c.includes(govFetchPrefix)) {
-              warnings.push("gov-fetch-bypass: shape changed in " + f);
+            } else if (c.includes("firecrawl_gov_search") && !c.includes(govFetchPrefix)) {
+              warnings.push("gov-fetch-bypass: no anchor/fetch in " + f);
             }
           }
 
@@ -505,6 +507,72 @@ services:
               /(\n\s*alexandria: [^\n]*?\.optional\(\)\.describe\()[^]*?(\n\s*\),)/,
               "$1\"\"$2"
             );
+            // 15a-5. 3.37.0 live profile/tool text still pointing at
+            //     cloud-only Alexandria/find_tools/feedback. Exact 3.37.0
+            //     anchors; older bundles no-op.
+            c = c.replace(
+              " firecrawl_search with sources: [{type: \"alexandria\"}] returns compact tool summaries in data.tools; toolDetail: \"full\" includes contracts, firecrawl_find_tools starts with categories, lists providers, then compact tools, and expands the selected full contract, and firecrawl_scrape with alexandria: [{provider, capability, options}] executes up to ten capabilities and returns their results.",
+              ""
+            );
+            c = c.replace(
+              " Alexandria provider calls require a Firecrawl API key and are not included in the hosted keyless tier.",
+              ""
+            );
+            c = c.replace(
+              "An Authorization bearer API key can provide higher usage limits and expose additional tools, subject to plan, deployment, and team policy, including firecrawl_map for site URL discovery, firecrawl_agent and firecrawl_agent_status for multi-source research that returns structured data when the URLs are not known, firecrawl_research_* for paper-index research, firecrawl_developer_search for Developer Index searches of public repositories, GitHub issues, merged pull requests, repository READMEs, and code documentation, and firecrawl_find_tools as the progressive Alexandria catalogue lookup alongside the Alexandria options of firecrawl_search and firecrawl_scrape for catalogued data providers.",
+              "An Authorization bearer API key can provide higher usage limits and expose additional tools, subject to plan, deployment, and team policy, including firecrawl_map for site URL discovery, firecrawl_research_* for paper-index research, and firecrawl_developer_search for Developer Index searches of public repositories, GitHub issues, merged pull requests, repository READMEs, and code documentation."
+            );
+            c = c.replace(
+              "On an authenticated session, \\`firecrawl_search\\` and \\`firecrawl_find_tools\\` can discover providers for the same fields across several pages; a matching provider returns typed records in one call.",
+              ""
+            );
+            c = c.replace(
+              "A query is required. Use Find Tools for catalogue lookup.",
+              "A query is required."
+            );
+            c = c.replace(
+              "Compact by default. Compact returns only provider, capability and description; full includes contracts. Inspect selected compact tools with firecrawl_find_tools providers and capabilities.",
+              "Compact by default. Compact returns only provider, capability and description; full includes contracts."
+            );
+            c = c.replace(
+              "Query for web and semantic tool discovery.",
+              "Query for web search."
+            );
+            c = c.replace(
+              " Catalogue browsing is available through firecrawl_find_tools.",
+              ""
+            );
+            c = c.replace(
+              "Include domain-matched tools for result URLs. Defaults to true when Alexandria is combined with web, news or images; semantic-only search leaves domain matching off.",
+              "Include domain-matched tools for result URLs."
+            );
+            c = c.replace(
+              "Search sources; authenticated sessions default to web + alexandria, keyless sessions to web only. ",
+              "Search sources; keyless sessions default to web only. "
+            );
+            c = c.replace(
+              / enterprise zdr or anon searches do not add it\. Use \["alexandria"\] alone for provider discovery without web results\./,
+              ""
+            );
+            c = c.replace(
+              " Authenticated responses can include an \\`id\\` for optional map feedback.",
+              ""
+            );
+            c = c.replace(
+              " Authenticated responses can include an \\`id\\` for optional scrape feedback.",
+              ""
+            );
+            c = c.replace(
+              " Authenticated responses can include a \\`metadata.scrapeId\\` for optional scrape feedback.",
+              ""
+            );
+            c = c.replace(
+              " Authenticated final responses can include a \\`data.metadata.scrapeId\\` for optional parse feedback.",
+              ""
+            );
+            c = c.replace(" for scrape feedback", "");
+            c = c.replace(" for parse feedback", "");
+            c = c.replace(" for optional map feedback", "");
 
             // 15b. FULL: capability-list opener -- drop monitoring and
             //     multi-source research wording (agent + monitor both off).
@@ -671,10 +739,23 @@ services:
           const c = fs.readFileSync(f, "utf8");
           if (c.includes("Keyless sessions get no Alexandria")) warnings.push("cloud-guidance remains in " + f);
           for (const n of ["ALEXANDRIA_SEARCH_INSTRUCTIONS", "ALEXANDRIA_SEARCH_LEAD", "ALEXANDRIA_CONTRACT_GUIDANCE", "ALEXANDRIA_TERMS_GUIDANCE"]) {
-            if (new RegExp("(?:var|const|let) " + n + " = \"(?!\")").test(c)) warnings.push(n + " remains in " + f);
+            const decl = new RegExp("(?:var|const|let) " + n + " =").test(c);
+            const blank = new RegExp("(?:var|const|let) " + n + " = \"\";").test(c);
+            if (decl && !blank) warnings.push(n + " not blanked in " + f);
           }
           if (c.includes("catalogued provider capabilities instead of fetching a page")) warnings.push("alexandria-scrape-desc remains in " + f);
           if (c.includes("Catalogued Alexandria capability invocation")) warnings.push("alexandria-param-desc remains in " + f);
+          if (c.includes("firecrawl_find_tools starts with categories")) warnings.push("full-profile cloud tail remains in " + f);
+          if (c.includes("Alexandria provider calls require")) warnings.push("keyless cloud text remains in " + f);
+          if (c.includes("firecrawl_find_tools as the progressive Alexandria catalogue lookup")) warnings.push("keyless cloud tail remains in " + f);
+          if (c.includes("can discover providers for the same fields across several pages")) warnings.push("scrape cloud paragraph remains in " + f);
+          if (c.includes("Use Find Tools for catalogue lookup")) warnings.push("empty-query cloud text remains in " + f);
+          if (c.includes("with firecrawl_find_tools providers")) warnings.push("toolDetail cloud text remains in " + f);
+          if (c.includes("Query for web and semantic tool discovery")) warnings.push("query cloud text remains in " + f);
+          if (c.includes("Catalogue browsing is available through firecrawl_find_tools")) warnings.push("query find_tools tail remains in " + f);
+          if (c.includes("web + alexandria")) warnings.push("sources cloud text remains in " + f);
+          if (c.includes("Alexandria is combined with")) warnings.push("domainTools cloud text remains in " + f);
+          if (c.includes("optional map feedback") || c.includes("optional scrape feedback") || c.includes("optional parse feedback") || c.includes("for scrape feedback") || c.includes("for parse feedback")) warnings.push("feedback hints remain in " + f);
         }
         if (warnings.length) console.log("WARN patch drift: " + warnings.join(", "));
         console.log("Total patched: " + n);
