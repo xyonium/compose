@@ -11,7 +11,9 @@ name: Build papers-service image
 #
 # tool.py 来自另一个仓库（xyonium/paper-search）：构建时先把 main 解析成
 # commit sha 传给 PAPER_SEARCH_REF，让 ADD 层缓存在 tool.py 更新时自然失效。
-# tool.py 单独更新不会触发本工作流——需要升级时用 workflow_dispatch 手动跑一把。
+# tool.py 单独更新不会命中上面的 paths 过滤——由 paper-search 的 notify-compose.yml
+# 用 repository_dispatch(paper-search-updated) 触发本工作流；没有 PAT 或需要手动
+# 升级时用 workflow_dispatch。
 
 on:
   push:
@@ -19,6 +21,10 @@ on:
     paths:
       - "papers-service/**"
       - ".github/workflows/papers-service-image.yml"
+  # paper-search 的 tool.py 更新用这个事件触发（见 paper-search 的
+  # .github/workflows/notify-compose.yml）
+  repository_dispatch:
+    types: [paper-search-updated]
   workflow_dispatch:
 
 permissions:
@@ -39,10 +45,20 @@ jobs:
       - name: Resolve paper-search ref
         id: psref
         run: |
+          set -euo pipefail
           sha=$(git ls-remote https://github.com/xyonium/paper-search.git refs/heads/main | cut -f1)
           test -n "$sha"
           echo "paper-search main = $sha"
+          # repository_dispatch 下 github.sha 是默认分支 tip，不是 checkout 的 firecrawl
+          # head——镜像 tag 和钉版提交信息一律用实际 checkout 的 commit。
+          echo "compose_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          # 同一 sha 取 tool.py 解析 version，供构建后的 /healthz 冒烟断言
+          curl -fsSL --retry 3 "https://raw.githubusercontent.com/xyonium/paper-search/$sha/tool.py" -o /tmp/tool.py
+          version=$(sed -n 's/^version:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' /tmp/tool.py | head -n1)
+          test -n "$version"
+          echo "tool.py version = $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - uses: docker/login-action@v3
         with:
@@ -61,13 +77,54 @@ jobs:
             PAPER_SEARCH_REF=${{ steps.psref.outputs.sha }}
           tags: |
             ghcr.io/xyonium/firecrawl-papers-service:latest
-            ghcr.io/xyonium/firecrawl-papers-service:sha-${{ github.sha }}
+            ghcr.io/xyonium/firecrawl-papers-service:sha-${{ steps.psref.outputs.compose_sha }}
+            ghcr.io/xyonium/firecrawl-papers-service:ps-${{ steps.psref.outputs.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/xyonium/compose
             org.opencontainers.image.description=paper-search-mcp replacement: /papers/* upstream for research-proxy (search via paper-search tool.py direct adapters)
             org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.revision=${{ steps.psref.outputs.compose_sha }}
+            org.xyonium.paper-search-ref=${{ steps.psref.outputs.sha }}
+            org.xyonium.paper-search-version=${{ steps.psref.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # 构建产物冒烟：直接跑刚推的镜像，断言 /healthz 的 toolVersion 等于本次
+      # 钉进去的 tool.py version（比只看构建成功更能证明 ADD 的 ref 真生效）
+      - name: Smoke test /healthz
+        env:
+          EXPECTED_TOOL_VERSION: ${{ steps.psref.outputs.version }}
+        run: |
+          set -euo pipefail
+          # buildx 的 docker-container driver 不把镜像留在宿主 daemon，必须 pull；
+          # 刚 push 完 registry 偶有秒级延迟，重试几次
+          pulled=
+          for _ in 1 2 3; do
+            if docker pull -q ghcr.io/xyonium/firecrawl-papers-service:latest; then pulled=1; break; fi
+            sleep 5
+          done
+          test -n "$pulled"
+          docker run -d --name papers-smoke -p 127.0.0.1:13200:3200 \
+            ghcr.io/xyonium/firecrawl-papers-service:latest
+          trap 'docker rm -f papers-smoke >/dev/null 2>&1 || true' EXIT
+          ok=
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:13200/healthz -o /tmp/healthz.json; then ok=1; break; fi
+            sleep 1
+          done
+          if [ -z "$ok" ]; then
+            echo "::error::papers-service 30s 内没有就绪"
+            docker logs papers-smoke 2>&1 | tail -50
+            exit 1
+          fi
+          cat /tmp/healthz.json
+          python3 - <<'PY'
+          import json, os, sys
+          d = json.load(open('/tmp/healthz.json'))
+          got, want = d.get('toolVersion'), os.environ['EXPECTED_TOOL_VERSION']
+          print(f"toolVersion={got} (vendored tool.py expects {want})")
+          sys.exit(0 if got == want else f"toolVersion mismatch: {got} != {want}")
+          PY
 
       - name: Pin digest in compose files
         run: |
@@ -115,6 +172,9 @@ jobs:
           echo "leakage gate OK"
 
       - name: Commit and push if changed
+        env:
+          COMPOSE_SHA: ${{ steps.psref.outputs.compose_sha }}
+          PAPER_SEARCH_SHA: ${{ steps.psref.outputs.sha }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -122,7 +182,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "digest unchanged"
           else
-            git commit -m "ci: pin papers-service digest ($(date -u +%F) ${GITHUB_SHA:0:7})"
+            git commit -m "ci: pin papers-service digest ($(date -u +%F) ${COMPOSE_SHA:0:7}, paper-search ${PAPER_SEARCH_SHA:0:7})"
             # 与 research-proxy-image 并发时可能撞 push：先 rebase 再推
             git pull --rebase origin firecrawl
             git push origin firecrawl
