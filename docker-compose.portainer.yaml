@@ -224,7 +224,8 @@ services:
   # paper-search 仓库 tool.py 的全部直连适配器，含 scholar 三级链），read 是轻量
   # 直连实现，读不了的源 404 由 research-proxy 落 reach-mcp。纯内部服务，不过 traefik。
   # 镜像由 .github/workflows/papers-service-image.yml 构建推 ghcr 并钉 digest 回本文件；
-  # tool.py 升级后手动 workflow_dispatch 一把即出新镜像。
+  # tool.py 升级由 paper-search 的 notify-compose 经 repository_dispatch 触发重建
+  # （没有 COMPOSE_DISPATCH_TOKEN 时手动 workflow_dispatch）。
   papers-service:
     image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/xyonium/firecrawl-papers-service@sha256:e89a8274f79d6f27f79cb942f298d8fe5d8887c6edcdeb47a0c3af877f20bdf1
     container_name: firecrawl-papers-service
