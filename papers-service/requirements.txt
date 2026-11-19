@@ -4,4 +4,5 @@ requests>=2.31
 pymupdf>=1.24
 anyio>=4
 pydantic>=2
-mcp==1.27.2  # 与 OWUI 容器内版本一致（新版把 streamablehttp_client 改名删别名，tool.py 依赖旧名）
+mcp==1.27.2  # 本服务固定 1.27.2（升级需跑 tests/test_contract.py + 真实 /papers/search_papers 冒烟）；
+             # 注意 tool.py ≥2.9.10 已同时兼容 mcp 1.x/2.x，OWUI 容器现为 2.3.0，不再是"版本一致"的约束

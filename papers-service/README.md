@@ -83,9 +83,17 @@ paper-search-mcp 退役后承接 `download_paper_to_knowledge` 的 OA 兜底链�
 并把 digest 钉回两个 compose 文件。compose 服务块见 `../docker-compose.portainer.yaml`
 （`papers-service`，端口 3200，内部服务不过 traefik）。
 
-**升级 tool.py**：tool.py 在另一个仓库，其更新不触发本工作流——
-在 Actions 页对 `Build papers-service image` 手动 `workflow_dispatch` 即可
-（会把当时的 paper-search main 打进新镜像并钉版）。
+**tool.py 自动更新**：paper-search 仓库 push `tool.py` → 它的
+`.github/workflows/notify-compose.yml` 发 `repository_dispatch(paper-search-updated)` →
+本工作流重建（`PAPER_SEARCH_REF` 解析成 main 的 sha），冒烟 `/healthz` 的
+`toolVersion` 与 tool.py 的 version 一致后，才把新 digest 钉回 compose 文件。
+需要 paper-search 仓库 secret `COMPOSE_DISPATCH_TOKEN`（fine-grained PAT，
+`xyonium/compose` contents:write）；没配时 notify 只告警。
+手动升级/兜底：在 Actions 页对 `Build papers-service image` 跑 `workflow_dispatch`。
+
+**漂移检测**（不需要 PAT）：镜像带 `org.xyonium.paper-search-ref` /
+`org.xyonium.paper-search-version` 标签；宿主机 cron 跑仓库根的
+`scripts/check-paper-search-drift.sh` 比对 main，落后退出码 1（cron 行见脚本头）。
 
 ## 本地开发/测试
 
