@@ -37,6 +37,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,6 +70,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: ./papers-service
@@ -89,31 +91,38 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 构建产物冒烟：直接跑刚推的镜像，断言 /healthz 的 toolVersion 等于本次
-      # 钉进去的 tool.py version（比只看构建成功更能证明 ADD 的 ref 真生效）
+      # 构建产物冒烟：直接跑本次构建输出的 digest，断言 /healthz 的 toolVersion 等于
+      # 本次钉进去的 tool.py version（比只看构建成功更能证明 ADD 的 ref 真生效）
       - name: Smoke test /healthz
         env:
           EXPECTED_TOOL_VERSION: ${{ steps.psref.outputs.version }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
+          case "$IMAGE_DIGEST" in
+            sha256:*) ;;
+            *) echo "::error::build 没有输出 digest: '$IMAGE_DIGEST'"; exit 1 ;;
+          esac
+          # 按 digest 拉取/运行，不碰可变的 :latest（pin 也只认这个 digest）
+          image="ghcr.io/xyonium/firecrawl-papers-service@${IMAGE_DIGEST}"
           # buildx 的 docker-container driver 不把镜像留在宿主 daemon，必须 pull；
           # 刚 push 完 registry 偶有秒级延迟，重试几次
           pulled=
           for _ in 1 2 3; do
-            if docker pull -q ghcr.io/xyonium/firecrawl-papers-service:latest; then pulled=1; break; fi
+            if docker pull -q "$image"; then pulled=1; break; fi
             sleep 5
           done
           test -n "$pulled"
-          docker run -d --name papers-smoke -p 127.0.0.1:13200:3200 \
-            ghcr.io/xyonium/firecrawl-papers-service:latest
+          docker run -d --name papers-smoke -p 127.0.0.1:13200:3200 "$image"
           trap 'docker rm -f papers-smoke >/dev/null 2>&1 || true' EXIT
           ok=
           for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:13200/healthz -o /tmp/healthz.json; then ok=1; break; fi
+            if curl -fsS --connect-timeout 2 --max-time 3 \
+              http://127.0.0.1:13200/healthz -o /tmp/healthz.json; then ok=1; break; fi
             sleep 1
           done
           if [ -z "$ok" ]; then
-            echo "::error::papers-service 30s 内没有就绪"
+            echo "::error::papers-service 健康检查超时（约 30 次尝试）"
             docker logs papers-smoke 2>&1 | tail -50
             exit 1
           fi
@@ -127,21 +136,20 @@ jobs:
           PY
 
       - name: Pin digest in compose files
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
           python3 - <<'PIN_EOF'
-          import re, subprocess, sys
+          import os, re, sys
+          # 用 build-push-action 本次输出的 digest，不再回读可变的 :latest
+          digest = os.environ['IMAGE_DIGEST'].strip()
+          if not re.fullmatch(r'sha256:[0-9a-f]{64}', digest):
+              print(f'::error::bad build digest: {digest!r}')
+              sys.exit(1)
           # 纯字面模板串——单引号 heredoc 下无 shell 展开；re.escape 后做 EOL 锚定
           #（镜像名互为前缀，不锚定行尾会误伤长名字的镜像行）
           lit = '${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/xyonium/firecrawl-papers-service'
-          r = subprocess.run(
-              ['docker', 'buildx', 'imagetools', 'inspect',
-               'ghcr.io/xyonium/firecrawl-papers-service:latest', '--format', '{{.Manifest.Digest}}'],
-              capture_output=True, text=True)
-          digest = r.stdout.strip()
-          if not digest.startswith('sha256:'):
-              print(f'::error::empty digest: {r.stdout!r} {r.stderr!r}')
-              sys.exit(1)
           pat = re.compile(re.escape(lit) + r'(:[A-Za-z0-9_.-]+)?(@sha256:[0-9a-f]{64})?(?=\s*$)', re.M)
           # portainer 是手改的权威文件，必须命中；merged 由 main 的 sync 工作流
           # 重生成，过渡期可能还没有模板行——没有就跳过，交给 sync 兜底
@@ -176,6 +184,7 @@ jobs:
           COMPOSE_SHA: ${{ steps.psref.outputs.compose_sha }}
           PAPER_SEARCH_SHA: ${{ steps.psref.outputs.sha }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docker-compose.portainer.yaml docker-compose.yaml
@@ -183,7 +192,15 @@ jobs:
             echo "digest unchanged"
           else
             git commit -m "ci: pin papers-service digest ($(date -u +%F) ${COMPOSE_SHA:0:7}, paper-search ${PAPER_SEARCH_SHA:0:7})"
-            # 与 research-proxy-image 并发时可能撞 push：先 rebase 再推
-            git pull --rebase origin firecrawl
-            git push origin firecrawl
+            # 与 research-proxy-image 并发时可能撞 push：rebase+push 有界重试
+            pushed=
+            for attempt in 1 2 3; do
+              if git pull --rebase origin firecrawl && git push origin firecrawl; then
+                pushed=1
+                break
+              fi
+              echo "push 失败（第 $attempt 次），重试…"
+              sleep 5
+            done
+            test -n "$pushed"
           fi
