@@ -23,7 +23,10 @@ if [[ -z "$actual" ]]; then
   exit 2
 fi
 
-expected=$(git ls-remote "$repo" refs/heads/main | cut -f1)
+expected=$(git ls-remote "$repo" refs/heads/main | cut -f1) || {
+  echo "UNKNOWN: 无法解析 $repo 的 main（网络/git 失败）" >&2
+  exit 2
+}
 if [[ -z "$expected" ]]; then
   echo "UNKNOWN: 无法解析 $repo 的 main" >&2
   exit 2
