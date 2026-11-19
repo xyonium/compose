@@ -6,8 +6,11 @@
 #
 # 退出码：0 一致；1 漂移（镜像落后）；2 无法判定（容器/标签缺失、网络失败）。
 #
-# 宿主机 cron 示例（每天 04:17，日志落 /var/log）：
-#   17 4 * * * /home/eli/compose/scripts/check-paper-search-drift.sh >> /var/log/paper-search-drift.log 2>&1
+# 宿主机 cron 示例（每天 04:17；成功静默，漂移/失败才发邮件）：
+#   MAILTO=you@example.com
+#   17 4 * * * /path/to/compose/scripts/check-paper-search-drift.sh >/dev/null
+# 不想收邮件就别装 cron：A 链路（notify→relay→build）已自动更新，这个脚本只是手工兜底。
+# 成功信息走 stdout（被丢弃），drift/UNKNOWN 走 stderr（cron 只邮件 stderr）。
 #
 # 环境变量：PAPERS_SERVICE_CONTAINER（默认 firecrawl-papers-service）
 #           PAPER_SEARCH_REPO（默认 https://github.com/xyonium/paper-search.git）
