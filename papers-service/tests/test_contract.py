@@ -493,3 +493,32 @@ def test_healthz():
     assert "doaj" in body["searchSources"]
     assert "arxiv" in body["readSources"]
     assert re.match(r"^\d+\.\d+\.\d+$", body["toolVersion"]), body["toolVersion"]
+
+
+def test_szlib_dispatch_and_prefix():
+    assert "szlib" in toolwrap.SEARCH_DISPATCH
+    assert "szlib" in toolwrap.EXPLICIT_ONLY_SOURCES
+    assert toolwrap._strip_prefix("szlib:abc123") == "abc123"
+
+
+def test_szlib_login_payload_shape():
+    exc = toolwrap.tool_mod._SzlibLoginRequired(
+        "http://login.example/abc", "tok-1", 300)
+    payload = main._szlib_login_payload(exc)
+    assert payload["source"] == "szlib"
+    assert payload["login_url"] == "http://login.example/abc"
+    assert payload["login_token"] == "tok-1"
+    assert payload["expires_in"] == 300
+
+
+def test_search_papers_all_excludes_szlib(monkeypatch):
+    called = []
+
+    async def fake(source, query, limit, session="default", login_token=""):
+        called.append(source)
+        return []
+
+    monkeypatch.setattr(toolwrap, "search", fake)
+    r = client.post("/papers/search_papers", json={"query": "x", "sources": "all"})
+    assert r.status_code == 200
+    assert "szlib" not in called

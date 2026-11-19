@@ -13,6 +13,7 @@
   未知源/未知工具      404（shim 记 "http 404" 进 sourceErrors 后继续）
   检索适配器抛异常     502 + detail（shim 记错误字符串）
   单源超时（16s）      504
+  szlib 登录型         200 + login_required（显式 szlib_login_token 可重试）
 """
 
 from __future__ import annotations
@@ -37,6 +38,27 @@ app = FastAPI(title="firecrawl-papers-service", docs_url=None, redoc_url=None)
 
 SEARCH_RE = re.compile(r"^search_([a-z0-9_]+)$")
 READ_RE = re.compile(r"^read_([a-z0-9_]+)_paper$")
+
+
+def _szlib_login_payload(e) -> dict:
+    """把 tool.py 的 _SzlibLoginRequired 转成与 OWUI tool 一致的 login_required。"""
+    code = getattr(e, "code", "") or "AWAITING_LOGIN"
+    url = getattr(e, "url", "") or ""
+    if code == "AWAITING_LOGIN" and url:
+        return {
+            "source": "szlib",
+            "login_url": url,
+            "login_token": getattr(e, "login_token", "") or "",
+            "expires_in": int(getattr(e, "expires_in", 300) or 300),
+            "notice": "深圳图书馆（读秀）需要先用浏览器登录：打开 login_url 完成，"
+                      "然后带同一个 szlib_login_token 重试同样的查询。",
+        }
+    return {
+        "source": "szlib",
+        "code": code,
+        "notice": "深圳图书馆登录未完成；login_token 是一次性的，"
+                  "请不带 szlib_login_token 重新检索获取新链接。",
+    }
 
 
 @app.get("/healthz")
@@ -80,30 +102,42 @@ async def papers_tool(tool: str, request: Request):
         except (TypeError, ValueError):
             limit = 5
         if sources_raw.lower() == "all":
-            names = sorted(toolwrap.SEARCH_DISPATCH)
+            names = sorted(s for s in toolwrap.SEARCH_DISPATCH
+                           if s not in toolwrap.EXPLICIT_ONLY_SOURCES)
         else:
             names = [s.strip() for s in sources_raw.split(",") if s.strip()]
         names = [s for s in dict.fromkeys(names) if s in toolwrap.SEARCH_DISPATCH]
         if not names:
             return JSONResponse({"detail": "no valid sources"}, status_code=400)
 
+        login_required = None
+
         async def _one(name: str):
             try:
                 return name, await asyncio.wait_for(
                     toolwrap.search(name, query, limit), timeout=16
                 ), None
+            except toolwrap.tool_mod._SzlibLoginRequired as e:
+                return name, [], e
             except Exception as e:
                 return name, [], str(e)
 
         results = await asyncio.gather(*(_one(n) for n in names))
         papers, source_results, errors = [], {}, {}
         for name, hits, err in results:
+            if isinstance(err, toolwrap.tool_mod._SzlibLoginRequired):
+                source_results[name] = 0
+                login_required = _szlib_login_payload(err)
+                continue
             source_results[name] = len(hits)
             if err:
                 errors[name] = str(err)[:300]
             else:
                 papers.extend(hits)
-        return {"papers": papers, "source_results": source_results, "errors": errors}
+        body = {"papers": papers, "source_results": source_results, "errors": errors}
+        if login_required is not None:
+            body["login_required"] = login_required
+        return body
 
     if tool == "download_with_fallback":
         source = str(body.get("source") or "")
@@ -149,7 +183,13 @@ async def papers_tool(tool: str, request: Request):
         except (TypeError, ValueError):
             limit = 10
         try:
-            papers = await toolwrap.search(source, query, limit)
+            papers = await toolwrap.search(
+                source, query, limit,
+                session=str(body.get("szlib_session") or "default"),
+                login_token=str(body.get("szlib_login_token") or ""),
+            )
+        except toolwrap.tool_mod._SzlibLoginRequired as e:
+            return {"papers": [], "login_required": _szlib_login_payload(e)}
         except asyncio.TimeoutError:
             return JSONResponse({"detail": f"{source} search timed out"}, status_code=504)
         except Exception as e:

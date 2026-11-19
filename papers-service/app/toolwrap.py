@@ -37,7 +37,7 @@ UA = {"User-Agent": "papers-service/1.0 (+https://github.com/xyonium/compose)"}
 _STRIP_PREFIXES = {
     "arxiv", "semantic", "hal", "zenodo", "ieee", "openaire", "openalex",
     "crossref", "core", "iacr", "pubmed", "pmid", "pmc", "scholar",
-    "biorxiv", "medrxiv", "europepmc",
+    "biorxiv", "medrxiv", "europepmc", "szlib",
 }
 
 _tools = None
@@ -57,6 +57,9 @@ def build_tools():
     v.tavily_base_url = os.environ.get("TAVILY_BASE_URL", "")
     v.apify_rotator_base_url = os.environ.get("APIFY_ROTATOR_BASE_URL", "")
     v.mcpo_api_key = os.environ.get("MCPO_API_KEY", "")
+    # szlib 的 admin valve 默认 http://szlib-mcp:8765；只有显式配了才覆盖。
+    if os.environ.get("SZLIB_URL") and hasattr(v, "szlib_url"):
+        v.szlib_url = os.environ["SZLIB_URL"]
     # downloader 的 Unpaywall 请求要求 email（匿名仅少量配额）。
     # unpaywall_email 在 tool.py 里是 UserValves（不在 Valves），走 __dict__ 兜底注入，
     # _unpaywall_pdf_url 用 valves.__dict__.get 读取，两侧一致。
@@ -243,16 +246,29 @@ SEARCH_DISPATCH = {
     "firecrawl": _firecrawl,
     "tavily": _tavily,
     "doaj": _doaj,
+    "szlib": lambda t, q, n: t._szlib_search(q, n),
 }
 
+# 登录型/显式专用源：可以单源调用，但不进 search_papers?all，也不进默认扇出。
+EXPLICIT_ONLY_SOURCES = frozenset({"szlib"})
 
-async def search(source: str, query: str, limit: int) -> list:
+
+async def search(source: str, query: str, limit: int,
+                 session: str = "default", login_token: str = "") -> list:
     """调 tool.py 对应直连适配器，剥 paper_id 前缀后返回 shim 消费的形状。
 
     shim 给单源 18s 预算，这里 16s 截断（留 2s 余量），超时抛 asyncio.TimeoutError。
+    szlib 例外：未登录的 202 很快返回；带 login_token 时服务端会阻塞等浏览器验证
+    （最长 300s），所以这里给 330s，且不走普通的 16s 预算。
     """
-    fn = SEARCH_DISPATCH[source]  # 路由层已校验存在
-    papers = await asyncio.wait_for(fn(tools(), query, limit), timeout=16)
+    if source == "szlib":
+        papers = await asyncio.wait_for(
+            tools()._szlib_search(query, limit, session=session, login_token=login_token),
+            timeout=330 if login_token else 180,
+        )
+    else:
+        fn = SEARCH_DISPATCH[source]  # 路由层已校验存在
+        papers = await asyncio.wait_for(fn(tools(), query, limit), timeout=16)
     out = []
     for p in papers or []:
         p = dict(p)

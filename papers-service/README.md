@@ -13,6 +13,10 @@
 | `POST /papers/read_{source}_paper` | `{"paper_id"}` | `{"result": "全文文本"}` |
 | `POST /papers/download_with_fallback` | `{"source", "paper_id", "doi", "title", "use_scihub", "scihub_base_url"}` | PDF 字节（`X-Download-Via` 标来源）；失败 404+`attempts` |
 | `GET /healthz` | — | 源清单 + tool.py 版本 |
+`POST /papers/search_szlib` 是登录型：未登录返回 200
+`{"papers": [], "login_required": {...}}`（带 `login_url` / `login_token` / `expires_in`）；
+完成浏览器登录后把 `szlib_login_token` 和同一个 `szlib_session` 放回请求体重试。
+`search_papers` 的 `sources=all` **不含** szlib；只有显式 `sources=szlib` 才会调用。
 
 item 形状（research-proxy `_paperhit_from_mcp` 消费的就是这些键）：
 `title / authors("; "分隔字符串) / published_date / abstract / paper_id(裸 id, 无前缀) / doi / source / pdf_url / url / citations`。
@@ -30,6 +34,10 @@ OWUI 侧和本服务行为天然一致。
   core, hal, dblp, zenodo, openaire, iacr, doaj
 - **key-gated**（没配 key 返回 `[]` 不报错）：ieee（IEEE_APIKEY）、
   zhihuiya（ZHIHUIYA_APIKEY）
+- **显式专用**：szlib（深圳图书馆/读秀，经 `szlib-mcp` 的 `POST /api/search`）。
+  需真实浏览器登录：首次调用返回 `login_required{login_url,login_token,expires_in}`，
+  浏览器完成验证后带 `szlib_login_token`（和同一个 `szlib_session`）重试。
+  **不进 `all`、不进默认扇出**；`paper_id` 为 `szlib:<sha1>`，只有元数据。
 - **google_scholar 三级链**（任一级都没配返回 `[]`）：
   firecrawl（FIRECRAWL_BASE_URL）→ tavily extract advanced（TAVILY_BASE_URL）
   → Apify actor（APIFY_ROTATOR_BASE_URL）
@@ -73,6 +81,7 @@ paper-search-mcp 退役后承接 `download_paper_to_knowledge` 的 OA 兜底链�
 | `TAVILY_BASE_URL` | scholar 链 tier2 + tavily 源，如 `http://api-key-rotator:8788/tavily` |
 | `APIFY_ROTATOR_BASE_URL` | scholar 链 tier3，如 `http://api-key-rotator:8788/apify` |
 | `MCPO_API_KEY` | mcpo 的 `--api-key`（firecrawl 走 mcpo 时需要） |
+| `SZLIB_URL` | szlib-mcp 地址，默认 `http://szlib-mcp:8765`；两个容器必须共享 Docker 网络 |
 | `UNPAYWALL_EMAIL` | download_with_fallback 的 Unpaywall 请求标识（匿名有配额限制） |
 | `PAPER_SEARCH_TOOL_PATH` | 本地开发时覆盖 tool.py 路径（默认 `/srv/vendor/tool.py`） |
 

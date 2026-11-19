@@ -35,6 +35,13 @@ PAPER_SOURCES = [
     ).split(",")
     if s.strip()
 ]
+# 可选/显式源：只做能力清单，不进入默认扇出。szlib 是登录型中文库
+# （首次调用返回 login_required），进 PAPER_SOURCES 会拖垮每次 research 检索。
+OPTIONAL_SOURCES = [
+    s.strip()
+    for s in os.environ.get("PAPER_OPTIONAL_SOURCES", "szlib").split(",")
+    if s.strip()
+]
 S2_BASE = "https://api.semanticscholar.org/graph/v1"
 S2_RECO_BASE = "https://api.semanticscholar.org/recommendations/v1"
 S2_KEY = os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "")

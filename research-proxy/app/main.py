@@ -58,6 +58,7 @@ async def healthz() -> dict:
         "ok": True,
         "githubTokens": len(github._tokens),
         "paperSources": papers.PAPER_SOURCES,
+        "paperOptionalSources": papers.OPTIONAL_SOURCES,
         "papers": papers.PAPERS_BASE,
         "reach": papers.REACH_BASE,
     }

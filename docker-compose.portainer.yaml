@@ -212,6 +212,8 @@ services:
       PAPERS_BASE_URL: ${PAPERS_BASE_URL:-http://papers-service:3200}
       REACH_BASE_URL: ${REACH_BASE_URL:-http://mcpo:8000}
       PAPER_SOURCES: ${PAPER_SOURCES:-arxiv,semantic,pubmed,openalex,crossref,europepmc,dblp,hal,pmc}
+      # 仅能力清单，不进扇出；szlib 是登录型中文库，显式调用走 papers-service。
+      PAPER_OPTIONAL_SOURCES: ${PAPER_OPTIONAL_SOURCES:-szlib}
       # 以下密钥在部署平台的 stack env 里配，不进 git：
       SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
       GITHUB_TOKENS: ${GITHUB_TOKENS:-}
@@ -244,6 +246,9 @@ services:
       TAVILY_BASE_URL: ${TAVILY_BASE_URL:-http://api-key-rotator:8788/tavily}
       APIFY_ROTATOR_BASE_URL: ${APIFY_ROTATOR_BASE_URL:-http://api-key-rotator:8788/apify}
       MCPO_API_KEY: ${MCPO_API_KEY:-}
+      # szlib（深圳图书馆/读秀，szlib-mcp，需浏览器登录；仅显式 sources=szlib）。
+      # papers-service 已在 owui 网络；szlib-mcp 需共享同一 Docker 网络。
+      SZLIB_URL: ${SZLIB_URL:-http://szlib-mcp:8765}
       # download_with_fallback 的 Unpaywall 请求标识（匿名有配额限制）
       UNPAYWALL_EMAIL: ${UNPAYWALL_EMAIL:-}
     networks:

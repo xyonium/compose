@@ -35,6 +35,12 @@
    `scripts/deploy_owui_tool.py --check` 比对 OWUI 工具表版本，漂移退出码 1；
    OWUI 侧用该脚本同步，不要在本仓库复制第二份工具实现。
 
+7. **szlib 是登录型显式源**：`papers-service` 的 `SEARCH_DISPATCH` 里有 `szlib`，
+   但**不得**进 `search_papers` 的 `sources=all`，也不得进 research-proxy 的
+   `PAPER_SOURCES` 默认扇出（首次调用返回 `login_required`，需浏览器登录；
+   带 `szlib_login_token` 的服务端请求会阻塞到 300s）。research-proxy 只把它放进
+   `PAPER_OPTIONAL_SOURCES` 能力清单；`szlib-mcp` 必须与 papers-service 同 Docker 网络。
+
 ## tool.py 自动更新链路
 
 ```

@@ -35,6 +35,7 @@ code search 必须登录（10 req/min/token，独立桶，按 token 不按 IP）
 | `REACH_BASE_URL` | `$MCPO_BASE_URL` | /reach/read_url（reach-mcp 仍在 mcpo 上） |
 | `MCPO_BASE_URL` | `http://mcpo:8000` | 上面两个的缺省回落；单独保留无其他用途 |
 | `PAPER_SOURCES` | `arxiv,semantic,pubmed,openalex,crossref,europepmc,dblp,hal,pmc` | 扇出源列表 |
+| `PAPER_OPTIONAL_SOURCES` | `szlib` | 可选/显式源清单（只出现在 `/healthz` 的 `paperOptionalSources`，**不进扇出**；szlib 需浏览器登录，显式调用走 papers-service） |
 | `SEMANTIC_SCHOLAR_API_KEY` | 空 | S2 graph/similar 用；空也能跑但更易 429 |
 | `GITHUB_TOKENS` | 空 | 逗号分隔；**空则 code search 返回 503** |
 | `LOG_LEVEL` | `INFO` | |
