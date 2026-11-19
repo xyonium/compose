@@ -895,7 +895,7 @@ services:
       UNPAYWALL_EMAIL: ${UNPAYWALL_EMAIL:-}
       ZENODO_ACCESS_TOKEN: ${ZENODO_ACCESS_TOKEN:-}
       ZHIHUIYA_APIKEY: ${ZHIHUIYA_APIKEY:-}
-    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/xyonium/firecrawl-papers-service@sha256:e9324a2c8bdf08e71b06a5eb26ddea508c5fcde36cfa68987207dcfc4ddef708
+    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/xyonium/firecrawl-papers-service@sha256:fe2ccfe6049cdfa2723e6bf2ff467c1f7a81990821845c8be4df77b1593a6ff9
     networks:
       backend: null
       owui: null
