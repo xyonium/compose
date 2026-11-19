@@ -62,6 +62,18 @@ paper-search main  push tool.py
 - 旁路漂移检测（不需要 PAT）：镜像带 `org.xyonium.paper-search-ref` 标签，宿主机 cron 跑
   `scripts/check-paper-search-drift.sh`（0=一致，1=落后，2=无法判定），cron 行见脚本头部。
 
+## firecrawl-mcp 启动 patch（最易漂移）
+
+- 位置：`docker-compose.portainer.yaml` 的 `firecrawl-mcp.command`；启动时把 `/app` 拷到
+  `/tmp/app-root`，对 `dist` 做替换后再 `exec`。改补丁只改 portainer，
+  `docker-compose.yaml` 是 sync 生成物。
+- 2026-11-19 适配 3.37.0：gov 调用多了 `.catch`，gov 旁路改成**标记匹配**（只替换
+  `client.http.get(...)` 调用段，保留 `.catch` 链）；新增 `ALEXANDRIA_SEARCH_INSTRUCTIONS`
+  清空；补 `WARN patch drift` 自检（缺锚点只告警、不 crash；已打过的文件不误报）。
+- 启动日志出现 `WARN patch drift` = 锚点又漂了：拉对应 digest 的镜像，按 main AGENTS 的
+  mcp patch 双层验证清单更新，别只看 `Total patched`。
+- 改完 portainer 后跑 `sync-firecrawl`（`pin_mode=keep`）才会进 `docker-compose.yaml`。
+
 ## 验收
 
 - Actions 运行的 **Smoke test /healthz** 日志里 `toolVersion=<x>` 与
