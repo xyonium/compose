@@ -111,16 +111,27 @@ async def papers_tool(tool: str, request: Request):
             return JSONResponse({"detail": "no valid sources"}, status_code=400)
 
         login_required = None
+        # szlib 要真实浏览器（可能 20-60s，登录时更久），不能套 16s 的通用预算；
+        # 其余源沿用 shim 给的 18s 里留 2s 余量的 16s。
+        session = str(body.get("session") or "default")
+        login_token = str(body.get("login_token") or "")
 
         async def _one(name: str):
+            tmo = (330 if login_token else 180) if name == "szlib" else 16
             try:
                 return name, await asyncio.wait_for(
-                    toolwrap.search(name, query, limit), timeout=16
+                    toolwrap.search(name, query, limit,
+                                    session=session, login_token=login_token),
+                    timeout=tmo
                 ), None
             except toolwrap.tool_mod._SzlibLoginRequired as e:
                 return name, [], e
+            except asyncio.TimeoutError:
+                # 显式记超时：空 TimeoutError 的 str 是 ""，会被下面的 `if err` 当成功吞掉
+                return name, [], f"timeout after {tmo}s"
             except Exception as e:
-                return name, [], str(e)
+                # 异常 message 可能为空（如某些连接错误）→ 至少留下类型名，别静默成 0 命中
+                return name, [], str(e) or type(e).__name__
 
         results = await asyncio.gather(*(_one(n) for n in names))
         papers, source_results, errors = [], {}, {}
