@@ -229,7 +229,7 @@ services:
   # tool.py 升级由 paper-search 的 notify-compose 经 repository_dispatch 触发重建
   # （没有 COMPOSE_DISPATCH_TOKEN 时手动 workflow_dispatch）。
   papers-service:
-    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/xyonium/firecrawl-papers-service@sha256:fe2ccfe6049cdfa2723e6bf2ff467c1f7a81990821845c8be4df77b1593a6ff9
+    image: ${JCR_REGISTRY:-ghcr.io}${JCR_REGISTRY:+/ghcr}/xyonium/firecrawl-papers-service@sha256:a0af6ef967f6a13d566ac265feca020fa7d30ccc8f64d888beb13511c805de82
     container_name: firecrawl-papers-service
     restart: unless-stopped
     environment:
