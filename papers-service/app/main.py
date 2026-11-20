@@ -53,11 +53,13 @@ def _szlib_login_payload(e) -> dict:
             "notice": "深圳图书馆（读秀）需要先用浏览器登录：打开 login_url 完成，"
                       "然后带同一个 szlib_login_token 重试同样的查询。",
         }
+    msg = str(getattr(e, "message", "") or "")
     return {
         "source": "szlib",
         "code": code,
-        "notice": "深圳图书馆登录未完成；login_token 是一次性的，"
-                  "请不带 szlib_login_token 重新检索获取新链接。",
+        "notice": "深圳图书馆登录未完成"
+                  + (f"（{msg}）" if msg else "")
+                  + "；login_token 是一次性的，请不带 szlib_login_token 重新检索获取新链接。",
     }
 
 
@@ -113,22 +115,28 @@ async def papers_tool(tool: str, request: Request):
         login_required = None
         # szlib 要真实浏览器（可能 20-60s，登录时更久），不能套 16s 的通用预算；
         # 其余源沿用 shim 给的 18s 里留 2s 余量的 16s。
-        session = str(body.get("session") or "default")
-        login_token = str(body.get("login_token") or "")
+        # 与单源端点 / app/toolwrap.search / tool.py search_papers 的入参名保持一致；
+        # 旧名 session/login_token 作兼容兜底（第一版 7e42b47 用的是旧名，会让按
+        # login_required 提示回传 szlib_login_token 的调用方被静默忽略）
+        session = str(body.get("szlib_session") or body.get("session") or "default")
+        login_token = str(body.get("szlib_login_token") or body.get("login_token") or "")
 
         async def _one(name: str):
-            tmo = (330 if login_token else 180) if name == "szlib" else 16
+            inner = (330 if login_token else 180) if name == "szlib" else 16
+            # 外层比内层多 20s：让 toolwrap 内部（含 szlib 的 login_token 阻塞契约）
+            # 先超时并抛出带上下文的错误，而不是被外层的空 TimeoutError 抢先
+            outer = inner + 20 if name == "szlib" else inner
             try:
                 return name, await asyncio.wait_for(
                     toolwrap.search(name, query, limit,
                                     session=session, login_token=login_token),
-                    timeout=tmo
+                    timeout=outer
                 ), None
             except toolwrap.tool_mod._SzlibLoginRequired as e:
                 return name, [], e
             except asyncio.TimeoutError:
                 # 显式记超时：空 TimeoutError 的 str 是 ""，会被下面的 `if err` 当成功吞掉
-                return name, [], f"timeout after {tmo}s"
+                return name, [], f"timeout after {inner}s"
             except Exception as e:
                 # 异常 message 可能为空（如某些连接错误）→ 至少留下类型名，别静默成 0 命中
                 return name, [], str(e) or type(e).__name__

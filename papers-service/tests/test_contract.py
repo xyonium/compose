@@ -522,3 +522,44 @@ def test_search_papers_all_excludes_szlib(monkeypatch):
     r = client.post("/papers/search_papers", json={"query": "x", "sources": "all"})
     assert r.status_code == 200
     assert "szlib" not in called
+
+
+def test_search_papers_szlib_forwards_session_and_login_token(monkeypatch):
+    """聚合端点必须接受 szlib_session/szlib_login_token（与单源端点一致），并透传。"""
+    seen = {}
+
+    async def fake(source, query, limit, session="default", login_token=""):
+        seen.update(source=source, session=session, login_token=login_token)
+        return [dict(_SAMPLE, source="szlib", paper_id="szlib:abc")]
+
+    monkeypatch.setattr(toolwrap, "search", fake)
+    r = client.post("/papers/search_papers", json={
+        "query": "城市更新", "sources": "szlib", "max_results_per_source": 2,
+        "szlib_session": "u-42", "szlib_login_token": "tok-9",
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["papers"]) == 1
+    assert seen == {"source": "szlib", "session": "u-42", "login_token": "tok-9"}
+
+
+def test_search_papers_szlib_timeout_is_reported(monkeypatch):
+    """szlib 超时不能被空 TimeoutError 吞成 0 命中；文案用内层预算 180s。"""
+    import asyncio as _asyncio
+
+    async def slow(*a, **k):
+        raise _asyncio.TimeoutError()
+
+    monkeypatch.setattr(toolwrap, "search", slow)
+    r = client.post("/papers/search_papers", json={"query": "x", "sources": "szlib"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["errors"]["szlib"] == "timeout after 180s"
+    assert body["source_results"]["szlib"] == 0
+
+
+def test_szlib_login_payload_keeps_message():
+    exc = toolwrap.tool_mod._SzlibLoginRequired("", "", 300, code="LOGIN_FAILED", message="密码错误")
+    payload = main._szlib_login_payload(exc)
+    assert payload["code"] == "LOGIN_FAILED"
+    assert "密码错误" in payload["notice"]
